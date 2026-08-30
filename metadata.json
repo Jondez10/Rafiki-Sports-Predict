@@ -1,0 +1,6 @@
+{
+  "name": "Rafiki Predict",
+  "description": "AI-powered sports prediction platform delivering daily football, basketball, and tennis betting accumulators.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

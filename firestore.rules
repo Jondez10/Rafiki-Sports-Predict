@@ -1,0 +1,108 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // 1. User Profiles:
+    // Allow users to read and update ONLY their own profile.
+    // Restrict write access to self-service non-sensitive fields only.
+    // Privileged fields (role, subscriptionStatus, paymentStatus, premiumExpiresAt,
+    // trialStartedAt, approvedAt, approvedBy, approvalNotes, rejectedAt, rejectionReason)
+    // cannot be modified or escalated directly by clients and must be managed via backend API routes.
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) 
+        && request.resource.data.role == 'user'
+        && (!('subscriptionStatus' in request.resource.data) || request.resource.data.subscriptionStatus == 'none' || request.resource.data.subscriptionStatus == 'trial')
+        && (!('paymentStatus' in request.resource.data) || request.resource.data.paymentStatus == 'none');
+      allow update: if isOwner(userId)
+        // Ensure sensitive administrative & billing fields are not modified by client
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'role',
+          'subscriptionStatus',
+          'paymentStatus',
+          'premiumExpiresAt',
+          'trialStartedAt',
+          'approvedAt',
+          'approvedBy',
+          'approvalNotes',
+          'rejectedAt',
+          'rejectionReason',
+          'paymentAmount',
+          'paymentReference',
+          'paymentMethod',
+          'paymentSubmittedAt'
+        ]));
+      allow delete: if false;
+    }
+
+    // 2. User Bookmarks / Saved Predictions:
+    // Allow users to read, create, and delete only their own bookmarks
+    match /saved/{savedId} {
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // 3. Public read-only content / Platform data collections:
+    // Predictions, accumulators, matches, articles, notifications, stats
+    // Managed securely server-side through the Express backend using Firebase Admin SDK
+    match /predictions/{predictionId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /accumulators/{accumulatorId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /matches/{matchId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /articles/{articleId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /stats/{statId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // 4. Sensitive Administrative & Payment Collections:
+    // Deny all direct client read and write. Must go through backend API endpoints.
+    match /payments/{paymentId} {
+      allow read, write: if false;
+    }
+
+    match /admin_notifications/{notifId} {
+      allow read, write: if false;
+    }
+
+    match /feedback/{feedbackId} {
+      allow read, write: if false;
+    }
+
+    // Default deny catch-all safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

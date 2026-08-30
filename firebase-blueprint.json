@@ -1,0 +1,185 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account registration and subscription profile",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "username": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "subscriptionStatus": { "type": "string", "enum": ["trial", "premium", "expired"] },
+        "subscriptionPlan": { "type": "string", "enum": ["daily", "weekly", "monthly", "yearly"] },
+        "trialStartedAt": { "type": "string" },
+        "premiumExpiresAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "username", "createdAt", "role", "subscriptionStatus"]
+    },
+    "SportMatch": {
+      "title": "SportMatch",
+      "description": "Sporting match telemetry and detail",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sport": { "type": "string" },
+        "homeTeam": { "type": "string" },
+        "awayTeam": { "type": "string" },
+        "league": { "type": "string" },
+        "startTime": { "type": "string" },
+        "status": { "type": "string", "enum": ["upcoming", "live", "completed"] },
+        "homeScore": { "type": "number" },
+        "awayScore": { "type": "number" }
+      },
+      "required": ["id", "sport", "homeTeam", "awayTeam", "league", "startTime", "status"]
+    },
+    "Prediction": {
+      "title": "Prediction",
+      "description": "AI sports prediction and telemetry details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "matchId": { "type": "string" },
+        "match": { "$ref": "#/entities/SportMatch" },
+        "pick": { "type": "string" },
+        "market": { "type": "string" },
+        "odds": { "type": "number" },
+        "confidence": { "type": "number" },
+        "riskLevel": { "type": "string", "enum": ["Low", "Medium", "High"] },
+        "expectedValue": { "type": "number" },
+        "probability": { "type": "number" },
+        "suggestedBetType": { "type": "string" },
+        "aiExplanation": { "type": "string" }
+      },
+      "required": ["id", "matchId", "match", "pick", "market", "odds", "confidence", "riskLevel", "expectedValue", "probability", "suggestedBetType", "aiExplanation"]
+    },
+    "Accumulator": {
+      "title": "Accumulator",
+      "description": "Daily elite multibet predictions accumulator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["safe", "balanced", "high_value"] },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "predictions": { "type": "array" },
+        "totalOdds": { "type": "number" },
+        "combinedConfidence": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "win", "loss"] }
+      },
+      "required": ["id", "type", "title", "date", "predictions", "totalOdds", "combinedConfidence", "status"]
+    },
+    "Article": {
+      "title": "Article",
+      "description": "Strategy or educational blog post written by analysts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "content": { "type": "string" },
+        "author": { "type": "string" },
+        "publishedAt": { "type": "string" },
+        "readTime": { "type": "string" }
+      },
+      "required": ["id", "title", "summary", "content", "author", "publishedAt", "readTime"]
+    },
+    "NotificationLog": {
+      "title": "NotificationLog",
+      "description": "Historical message alert logs for real-time channels",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["alert", "success", "system", "streak"] },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "title", "message", "type", "timestamp"]
+    },
+    "PerformanceStats": {
+      "title": "PerformanceStats",
+      "description": "Global performance figures and graphs data",
+      "type": "object",
+      "properties": {
+        "monthlyAccuracy": { "type": "number" },
+        "weeklyAccuracy": { "type": "number" },
+        "roi": { "type": "number" },
+        "winRate": { "type": "number" },
+        "totalWon": { "type": "number" },
+        "totalLost": { "type": "number" },
+        "totalActive": { "type": "number" }
+      },
+      "required": ["monthlyAccuracy", "weeklyAccuracy", "roi", "winRate", "totalWon", "totalLost", "totalActive"]
+    },
+    "Feedback": {
+      "title": "Feedback",
+      "description": "User feedback and rating for predictions and accumulators",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "itemId": { "type": "string" },
+        "itemType": { "type": "string", "enum": ["prediction", "accumulator"] },
+        "itemTitle": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "itemId", "itemType", "rating", "timestamp"]
+    },
+    "SavedPrediction": {
+      "title": "SavedPrediction",
+      "description": "Bookmarked predictions saved by users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "predictionId": { "type": "string" },
+        "userId": { "type": "string" },
+        "savedAt": { "type": "string" },
+        "prediction": { "$ref": "#/entities/Prediction" }
+      },
+      "required": ["id", "predictionId", "userId", "savedAt", "prediction"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User accounts and active profiles"
+    },
+    "/feedback/{feedbackId}": {
+      "schema": "Feedback",
+      "description": "User ratings and qualitative feedback comments"
+    },
+    "/matches/{matchId}": {
+      "schema": "SportMatch",
+      "description": "Active matches database records"
+    },
+    "/predictions/{predictionId}": {
+      "schema": "Prediction",
+      "description": "Individual premium and safe sport outcomes"
+    },
+    "/accumulators/{accumulatorId}": {
+      "schema": "Accumulator",
+      "description": "Daily combination prediction tickets"
+    },
+    "/articles/{articleId}": {
+      "schema": "Article",
+      "description": "Betting educational guide articles"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "NotificationLog",
+      "description": "System updates log"
+    },
+    "/stats/{statId}": {
+      "schema": "PerformanceStats",
+      "description": "Global prediction accuracy percentages"
+    },
+    "/saved/{savedId}": {
+      "schema": "SavedPrediction",
+      "description": "Bookmarked and saved sports predictions by users"
+    }
+  }
+}

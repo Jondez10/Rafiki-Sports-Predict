@@ -1,0 +1,256 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  body {
+    background-color: #000000;
+    font-family: var(--font-sans);
+  }
+}
+
+/* Elegant micro-animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideLeft {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slideLeft {
+  animation: slideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Custom modern scrollbars for far-end vertical and bottom horizontal navigation */
+html {
+  overflow-x: auto;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #10b981 #09090b;
+}
+
+::-webkit-scrollbar {
+  width: 10px; /* Vertical scrollbar on the far end of the screen */
+  height: 10px; /* Horizontal scrollbar at the bottom of the screen */
+}
+
+::-webkit-scrollbar-track {
+  background: #09090b;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #10b981, #059669);
+  border-radius: 9999px;
+  border: 2px solid #09090b;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #34d399, #10b981);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+}
+
+::-webkit-scrollbar-corner {
+  background: #09090b;
+}
+
+/* Light Theme Scrollbars */
+.theme-high-contrast html,
+.theme-high-contrast body {
+  scrollbar-color: #059669 #f1f5f9;
+}
+
+.theme-high-contrast ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.theme-high-contrast ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #059669, #047857);
+  border: 2px solid #f1f5f9;
+}
+
+/* High Contrast Light Theme overrides */
+.theme-high-contrast {
+  background-color: #f8fafc !important; /* slate-50 */
+  color: #0f172a !important; /* slate-900 */
+}
+
+.theme-high-contrast .bg-black {
+  background-color: #f8fafc !important;
+}
+
+.theme-high-contrast .bg-zinc-950,
+.theme-high-contrast .bg-zinc-900,
+.theme-high-contrast .bg-zinc-900\/50,
+.theme-high-contrast .bg-zinc-950\/40,
+.theme-high-contrast .bg-zinc-950\/20,
+.theme-high-contrast .bg-zinc-900\/80,
+.theme-high-contrast .bg-zinc-950\/30 {
+  background-color: #ffffff !important;
+}
+
+.theme-high-contrast .bg-zinc-900\/30 {
+  background-color: #f1f5f9 !important; /* slate-100 */
+}
+
+/* Card gradients */
+.theme-high-contrast .bg-gradient-to-br,
+.theme-high-contrast .bg-gradient-to-tr {
+  background-image: none !important;
+  background-color: #ffffff !important;
+}
+
+/* Keep the branding gradient beautiful! */
+.theme-high-contrast .bg-gradient-to-tr.from-emerald-500 {
+  background-image: linear-gradient(to top right, #10b981, #2dd4bf) !important;
+}
+
+/* Borders */
+.theme-high-contrast .border-zinc-900,
+.theme-high-contrast .border-zinc-800,
+.theme-high-contrast .border-zinc-850,
+.theme-high-contrast .border-zinc-800\/80,
+.theme-high-contrast .border-zinc-800\/60,
+.theme-high-contrast .border-zinc-700,
+.theme-high-contrast .border-zinc-800\/30,
+.theme-high-contrast .border-zinc-900\/60 {
+  border-color: #cbd5e1 !important; /* slate-300 */
+}
+
+/* Text colors */
+.theme-high-contrast .text-white,
+.theme-high-contrast .text-zinc-100,
+.theme-high-contrast .text-gray-100 {
+  color: #0f172a !important; /* slate-900 */
+}
+
+.theme-high-contrast .text-gray-300,
+.theme-high-contrast .text-gray-400,
+.theme-high-contrast .text-zinc-400 {
+  color: #334155 !important; /* slate-700 */
+}
+
+.theme-high-contrast .text-gray-500,
+.theme-high-contrast .text-zinc-500 {
+  color: #475569 !important; /* slate-600 */
+}
+
+.theme-high-contrast .text-gray-600,
+.theme-high-contrast .text-zinc-600 {
+  color: #64748b !important; /* slate-500 */
+}
+
+/* Inputs and interactive states */
+.theme-high-contrast input,
+.theme-high-contrast select,
+.theme-high-contrast textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #94a3b8 !important; /* slate-400 */
+}
+
+.theme-high-contrast input::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Buttons in light mode */
+.theme-high-contrast .bg-zinc-900 {
+  background-color: #e2e8f0 !important; /* slate-200 */
+  color: #0f172a !important;
+}
+
+.theme-high-contrast .bg-zinc-900:hover {
+  background-color: #cbd5e1 !important; /* slate-300 */
+}
+
+/* Accent texts like green can be dark green for better light-background contrast (Accessibility) */
+.theme-high-contrast .text-emerald-400 {
+  color: #15803d !important; /* emerald-700 for proper contrast on white background */
+}
+
+.theme-high-contrast .text-emerald-500 {
+  color: #166534 !important; /* emerald-800 */
+}
+
+.theme-high-contrast .bg-emerald-950\/50,
+.theme-high-contrast .bg-emerald-950\/30,
+.theme-high-contrast .bg-emerald-950\/20,
+.theme-high-contrast .bg-emerald-950\/40 {
+  background-color: #dcfce7 !important; /* emerald-100 */
+  border-color: #86efac !important; /* emerald-300 */
+}
+
+.theme-high-contrast .bg-emerald-500 {
+  background-color: #16a34a !important; /* emerald-600 */
+  color: #ffffff !important;
+}
+
+.theme-high-contrast .bg-emerald-500:hover {
+  background-color: #15803d !important;
+}
+
+.theme-high-contrast .bg-emerald-500 .text-black {
+  color: #ffffff !important;
+}
+
+/* Acca type buttons selection */
+.theme-high-contrast .bg-blue-950\/30 {
+  background-color: #dbeafe !important; /* blue-100 */
+  border-color: #93c5fd !important;
+}
+
+.theme-high-contrast .bg-purple-950\/30 {
+  background-color: #f3e8ff !important; /* purple-100 */
+  border-color: #c084fc !important;
+}
+
+/* Amber text/gold text should have high contrast on white (e.g., dark amber) */
+.theme-high-contrast .text-amber-400 {
+  color: #b45309 !important; /* amber-700 */
+}
+
+.theme-high-contrast .bg-amber-950\/20 {
+  background-color: #fef3c7 !important; /* amber-100 */
+  border-color: #fcd34d !important;
+}
+
+/* Modals & overlays */
+.theme-high-contrast .bg-black\/80 {
+  background-color: rgba(15, 23, 42, 0.75) !important;
+}
+
+.theme-high-contrast .bg-zinc-900 {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* Quick selections */
+.theme-high-contrast ::selection {
+  background-color: #bbf7d0 !important; /* emerald-200 */
+  color: #0f172a !important;
+}
+
