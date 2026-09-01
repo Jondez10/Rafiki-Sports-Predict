@@ -38,25 +38,30 @@ import {
   waitForPendingWrites
 } from 'firebase/firestore';
 
-// Configuration loaded from firebase-applet-config.json
-const firebaseConfig = {
-  apiKey: "AIzaSyDKcBbUdNWMDN8c25Du261sNMgZNnmxWZE",
-  authDomain: "symmetric-silicon-r2t1j.firebaseapp.com",
-  projectId: "symmetric-silicon-r2t1j",
-  storageBucket: "symmetric-silicon-r2t1j.firebasestorage.app",
-  messagingSenderId: "354839059532",
-  appId: "1:354839059532:web:c6a5bccb491a2104aca8e9"
-};
+import { config, validateEnvironment, getEnvVariable } from './config';
 
-// Initialize Firebase
+/**
+ * Helper function to safely read environment variables across Vite, process.env, and SSR runtimes.
+ */
+export const getFirebaseEnv = getEnvVariable;
+
+/**
+ * Runtime validator for Firebase configuration environment variables.
+ */
+export function validateFirebaseEnv() {
+  return validateEnvironment().firebase;
+}
+
+// Configuration loaded and validated dynamically strictly from environment variables
+export const firebaseConfig = config.firebase;
+
+// Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
 // Initialize Services
 export const auth = getAuth(app);
 // Use default firestore database or config-specified database ID
-export const db = (firebaseConfig as any).firestoreDatabaseId 
-  ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId)
-  : getFirestore(app);
+export const db = getFirestore(app);
 setLogLevel('error');
 
 // Google OAuth Provider

@@ -54,6 +54,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import TiltCard from './TiltCard';
+import { useAccessKeySession } from '../lib/accessKeySession';
 
 const getOddsColorClass = (odds: number, defaultClass: string = "text-emerald-400") => {
   if (odds > 3.00) return "text-amber-400 font-extrabold";
@@ -543,14 +544,50 @@ export default function PredictionsTab({
     setActiveShareMenuId(null);
   };
 
-  const togglePredictionSelection = (predId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedPredictionIds(prev => 
-      prev.includes(predId) 
-        ? prev.filter(id => id !== predId) 
-        : [...prev, predId]
-    );
+  // Combine real database predictions with any local simulated predictions
+  const allPredictions = React.useMemo(() => {
+    return [...predictions, ...extraPredictions];
+  }, [predictions, extraPredictions]);
+
+  // Combine all active predictions from props, extra simulations, and accumulator legs for global betslip lookup
+  const allPoolPredictions = React.useMemo(() => {
+    const map = new Map<string, Prediction>();
+    predictions.forEach(p => map.set(p.id, p));
+    extraPredictions.forEach(p => map.set(p.id, p));
+    accumulators.forEach(a => a.predictions.forEach(p => map.set(p.id, p)));
+    return Array.from(map.values());
+  }, [predictions, extraPredictions, accumulators]);
+
+  const togglePredictionSelection = (predOrId: string | Prediction, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const predId = typeof predOrId === 'string' ? predOrId : predOrId.id;
+    const targetPred = allPoolPredictions.find(p => p.id === predId) || (typeof predOrId === 'object' ? predOrId : null);
+
+    setSelectedPredictionIds(prev => {
+      const isAlreadySelected = prev.includes(predId);
+      if (isAlreadySelected) {
+        addToast({
+          title: language === 'en' ? 'Removed from Betslip' : 'Imeondolewa kwenye Jamvi',
+          message: targetPred 
+            ? (language === 'en' ? `Removed ${targetPred.match.homeTeam} vs ${targetPred.match.awayTeam} (${targetPred.pick})` : `Imeondoa ${targetPred.match.homeTeam} vs ${targetPred.match.awayTeam}`)
+            : (language === 'en' ? 'Selection removed from betslip' : 'Uchaguzi umeondolewa kwenye jamvi'),
+          type: 'info'
+        });
+        return prev.filter(id => id !== predId);
+      } else {
+        addToast({
+          title: language === 'en' ? 'Added to Betslip!' : 'Imeongezwa kwenye Jamvi!',
+          message: targetPred 
+            ? (language === 'en' ? `Added ${targetPred.match.homeTeam} vs ${targetPred.match.awayTeam} • ${targetPred.pick} (@${(targetPred.modelFairOdds || targetPred.odds).toFixed(2)})` : `Imeongeza ${targetPred.match.homeTeam} vs ${targetPred.match.awayTeam} • ${targetPred.pick}`)
+            : (language === 'en' ? 'Selection added to custom betslip builder' : 'Uchaguzi umeongezwa kwenye jamvi'),
+          type: 'success'
+        });
+        return [...prev, predId];
+      }
+    });
   };
+
+  const accessKeySession = useAccessKeySession();
 
   // Check if subscription, trial, admin or guest pass is active
   const isPremium = userProfile?.subscriptionStatus === 'premium';
@@ -558,6 +595,7 @@ export default function PredictionsTab({
   const isAdmin = userProfile?.role === 'admin';
 
   const isGuestValid = React.useMemo(() => {
+    if (accessKeySession.isActive) return true;
     if (guestPass && guestPass.expiresAt && new Date(guestPass.expiresAt).getTime() > Date.now()) {
       return true;
     }
@@ -569,14 +607,9 @@ export default function PredictionsTab({
       }
     } catch {}
     return false;
-  }, [guestPass]);
+  }, [guestPass, accessKeySession.isActive]);
 
-  const isUnlocked = isPremium || isTrial || isAdmin || isGuestValid;
-
-  // Combine real database predictions with any local simulated predictions
-  const allPredictions = React.useMemo(() => {
-    return [...predictions, ...extraPredictions];
-  }, [predictions, extraPredictions]);
+  const isUnlocked = isPremium || isTrial || isAdmin || isGuestValid || accessKeySession.isActive;
 
   // Comprehensive extraction of available leagues with metadata & participating teams
   const availableLeaguesData = React.useMemo(() => {
@@ -831,7 +864,15 @@ export default function PredictionsTab({
               <div className="relative">
                 <input
                   id="predictions-search"
+                  name="predictions_search_filter"
                   type="text"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  data-form-type="other"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => {
@@ -1596,20 +1637,43 @@ export default function PredictionsTab({
                           </div>
                         </div>
 
-                        <div className="text-right">
-                          {isAccaLocked ? (
-                            <span className="text-xs font-mono font-bold text-amber-400">
-                              🔒 VIP
-                            </span>
-                          ) : (
-                            <>
-                              <div className={`text-xs font-mono font-bold ${getOddsColorClass(leg.odds, "text-white")}`}>
-                                @{leg.odds.toFixed(2)}
-                              </div>
-                              <div className="text-[9px] text-emerald-500 font-mono">
-                                {leg.confidence}% Conf
-                              </div>
-                            </>
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <div className="text-right">
+                            {isAccaLocked ? (
+                              <span className="text-xs font-mono font-bold text-amber-400">
+                                🔒 VIP
+                              </span>
+                            ) : (
+                              <>
+                                <div className={`text-xs font-mono font-bold ${getOddsColorClass(leg.odds, "text-white")}`}>
+                                  @{leg.odds.toFixed(2)}
+                                </div>
+                                <div className="text-[9px] text-emerald-500 font-mono">
+                                  {leg.confidence}% Conf
+                                </div>
+                              </>
+                            )}
+                          </div>
+
+                          {!isAccaLocked && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                togglePredictionSelection(leg, e);
+                              }}
+                              className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center shrink-0 ${
+                                selectedPredictionIds.includes(leg.id)
+                                  ? 'bg-emerald-500 text-black border-emerald-400 font-bold shadow-sm shadow-emerald-500/30 scale-105'
+                                  : 'bg-zinc-950 hover:bg-emerald-500/20 text-emerald-400 border-zinc-800 hover:border-emerald-500/50'
+                              }`}
+                              title={selectedPredictionIds.includes(leg.id) ? (language === 'sw' ? "Ondoa kwenye jamvi" : "Remove from custom betslip") : (language === 'sw' ? "Weka mechi hii kwenye jamvi lako (+)" : "Add this pick to custom betslip builder (+)")}
+                            >
+                              {selectedPredictionIds.includes(leg.id) ? (
+                                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                              ) : (
+                                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                              )}
+                            </button>
                           )}
                         </div>
                       </div>
@@ -1837,8 +1901,16 @@ export default function PredictionsTab({
                         {selectedCurrency}
                       </div>
                       <input
+                        name="accumulator_stake_amount"
                         type="number"
                         min="1"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        data-form-type="other"
                         value={stakeInput}
                         onChange={(e) => setStakeInput(e.target.value)}
                         placeholder="Enter simulated stake..."
@@ -2161,35 +2233,57 @@ export default function PredictionsTab({
                   </div>
                 </div>
 
-                <div className="border-t border-zinc-800/80 pt-4 flex justify-between items-center">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-gray-500">
-                      Selection {tip.modelFairOdds ? '• Model Fair Odds' : ''}
-                    </span>
-                    {isUnlocked ? (
-                      <span className="text-xs font-bold text-emerald-400">
-                        {tip.pick} <span className={getOddsColorClass(tip.modelFairOdds || tip.odds, "text-white")}>@{(tip.modelFairOdds || tip.odds).toFixed(2)}</span>
-                      </span>
-                    ) : (
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-xs font-mono font-bold text-amber-400 flex items-center gap-1 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-900/40">
-                          <Lock className="w-3 h-3 text-amber-400" />
-                          <span>{language === 'sw' ? 'Utabiri Umefungwa' : 'Pick Locked'}</span>
-                        </span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onNavigateToBilling();
-                          }}
-                          className="text-[10px] bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-2 py-0.5 rounded cursor-pointer shadow-sm transition-transform active:scale-95"
-                        >
-                          {language === 'sw' ? 'Fungua' : 'Unlock'}
-                        </button>
-                      </div>
+                <div className="border-t border-zinc-800/80 pt-4 flex justify-between items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isUnlocked && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          togglePredictionSelection(tip, e);
+                        }}
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer shrink-0 border ${
+                          selectedPredictionIds.includes(tip.id)
+                            ? 'bg-emerald-500 text-black border-emerald-400 font-bold shadow-sm shadow-emerald-500/40 scale-105'
+                            : 'bg-zinc-950 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:border-emerald-400'
+                        }`}
+                        title={selectedPredictionIds.includes(tip.id) ? (language === 'sw' ? "Ondoa kwenye jamvi" : "Remove from custom betslip") : (language === 'sw' ? "Weka mechi hii kwenye jamvi lako (+)" : "Add this pick to custom betslip builder (+)")}
+                      >
+                        {selectedPredictionIds.includes(tip.id) ? (
+                          <Check className="w-4 h-4 text-current stroke-[3]" />
+                        ) : (
+                          <Plus className="w-4 h-4 text-current stroke-[2.5]" />
+                        )}
+                      </button>
                     )}
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[10px] text-gray-500 truncate">
+                        Selection {tip.modelFairOdds ? '• Fair Odds' : ''}
+                      </span>
+                      {isUnlocked ? (
+                        <span className="text-xs font-bold text-emerald-400 truncate" title={tip.pick}>
+                          {tip.pick} <span className={getOddsColorClass(tip.modelFairOdds || tip.odds, "text-white")}>@{(tip.modelFairOdds || tip.odds).toFixed(2)}</span>
+                        </span>
+                      ) : (
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-xs font-mono font-bold text-amber-400 flex items-center gap-1 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-900/40">
+                            <Lock className="w-3 h-3 text-amber-400" />
+                            <span>{language === 'sw' ? 'Utabiri Umefungwa' : 'Pick Locked'}</span>
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onNavigateToBilling();
+                            }}
+                            className="text-[10px] bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-2 py-0.5 rounded cursor-pointer shadow-sm transition-transform active:scale-95"
+                          >
+                            {language === 'sw' ? 'Fungua' : 'Unlock'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     {/* Share Action */}
                     <div className="relative">
                       <button
@@ -2232,14 +2326,16 @@ export default function PredictionsTab({
                           onNavigateToBilling();
                           return;
                         }
-                        togglePredictionSelection(tip.id, e);
+                        togglePredictionSelection(tip, e);
                       }}
-                      className={`text-xs font-sans font-semibold py-2 px-2.5 rounded-xl border transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
-                        selectedPredictionIds.includes(tip.id)
-                          ? 'bg-emerald-500 text-black border-emerald-500 font-bold'
-                          : 'bg-zinc-950 hover:bg-zinc-900 border-zinc-800 text-gray-300'
+                      className={`text-xs font-sans font-semibold py-2 px-2.5 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                        !isUnlocked
+                          ? 'bg-zinc-950 hover:bg-zinc-900 border-zinc-800 text-amber-400'
+                          : selectedPredictionIds.includes(tip.id)
+                          ? 'bg-emerald-500 text-black border-emerald-400 font-bold shadow-md shadow-emerald-500/20'
+                          : 'bg-zinc-950 hover:bg-zinc-900 border-zinc-800 text-gray-200 hover:border-emerald-500/50 hover:text-emerald-400'
                       }`}
-                      title={!isUnlocked ? "Unlock to add to betslip" : (selectedPredictionIds.includes(tip.id) ? "Remove from Quick Bet" : "Add to Quick Bet")}
+                      title={!isUnlocked ? "Unlock to add to betslip" : (selectedPredictionIds.includes(tip.id) ? (language === 'sw' ? "Ondoa kwenye jamvi" : "Remove from custom betslip") : (language === 'sw' ? "Weka kwenye kibandiko cha dau (+)" : "Add to custom betslip builder (+)"))}
                     >
                       {!isUnlocked ? (
                         <>
@@ -2248,13 +2344,13 @@ export default function PredictionsTab({
                         </>
                       ) : selectedPredictionIds.includes(tip.id) ? (
                         <>
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Selected</span>
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>{t.inBetslip || t.selected}</span>
                         </>
                       ) : (
                         <>
-                          <Plus className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Quick Bet</span>
+                          <Plus className="w-3.5 h-3.5 text-emerald-400 stroke-[2.5]" />
+                          <span>{t.addToBetslip || t.quickBet}</span>
                         </>
                       )}
                     </button>
@@ -2680,12 +2776,37 @@ export default function PredictionsTab({
 
                 <div className="border-t border-zinc-800/80 pt-3.5 flex justify-between items-center">
                   {isUnlocked ? (
-                    <div className="grid grid-cols-3 gap-4 text-left">
-                      <div>
-                        <span className="text-[10px] text-gray-500 block">Selection</span>
-                        <span className="text-xs font-bold text-white truncate max-w-[100px] block">
-                          {pred.pick}
-                        </span>
+                    <div className="grid grid-cols-3 gap-4 text-left items-center">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            if (!isUnlocked) {
+                              e.stopPropagation();
+                              onNavigateToBilling();
+                              return;
+                            }
+                            togglePredictionSelection(pred, e);
+                          }}
+                          className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all cursor-pointer shrink-0 border ${
+                            selectedPredictionIds.includes(pred.id)
+                              ? 'bg-emerald-500 text-black border-emerald-400 font-bold shadow-sm shadow-emerald-500/40 scale-105'
+                              : 'bg-zinc-950 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:border-emerald-400'
+                          }`}
+                          title={selectedPredictionIds.includes(pred.id) ? (language === 'sw' ? "Ondoa kwenye jamvi" : "Remove from custom betslip") : (language === 'sw' ? "Weka mechi hii kwenye jamvi lako (+)" : "Add this pick to custom betslip builder (+)")}
+                        >
+                          {selectedPredictionIds.includes(pred.id) ? (
+                            <Check className="w-3.5 h-3.5 text-current stroke-[3]" />
+                          ) : (
+                            <Plus className="w-3.5 h-3.5 text-current stroke-[2.5]" />
+                          )}
+                        </button>
+                        <div className="min-w-0">
+                          <span className="text-[10px] text-gray-500 block leading-tight">Selection</span>
+                          <span className="text-xs font-bold text-white truncate max-w-[95px] block leading-tight" title={pred.pick}>
+                            {pred.pick}
+                          </span>
+                        </div>
                       </div>
                       <div>
                         <span className="text-[10px] text-gray-500 block">
@@ -2769,16 +2890,16 @@ export default function PredictionsTab({
                           onNavigateToBilling();
                           return;
                         }
-                        togglePredictionSelection(pred.id, e);
+                        togglePredictionSelection(pred, e);
                       }}
-                      className={`text-[11px] font-sans font-semibold py-1.5 px-2.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
+                      className={`text-[11px] font-sans font-semibold py-1.5 px-2.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                         !isUnlocked
                           ? 'bg-zinc-950 hover:bg-zinc-900 border-zinc-800 text-amber-400'
                           : selectedPredictionIds.includes(pred.id)
-                          ? 'bg-emerald-500 text-black border-emerald-500 font-bold'
-                          : 'bg-zinc-950 hover:bg-zinc-800 border-zinc-800/60 text-gray-300'
+                          ? 'bg-emerald-500 text-black border-emerald-400 font-bold shadow-md shadow-emerald-500/20'
+                          : 'bg-zinc-950 hover:bg-zinc-800 border-zinc-800/80 text-gray-200 hover:border-emerald-500/50 hover:text-emerald-400'
                       }`}
-                      title={!isUnlocked ? "Unlock VIP Access" : (selectedPredictionIds.includes(pred.id) ? "Remove from Quick Bet" : "Add to Quick Bet")}
+                      title={!isUnlocked ? "Unlock VIP Access" : (selectedPredictionIds.includes(pred.id) ? (language === 'sw' ? "Ondoa kwenye jamvi" : "Remove from custom betslip") : (language === 'sw' ? "Weka kwenye kibandiko cha dau (+)" : "Add to custom betslip builder (+)"))}
                     >
                       {!isUnlocked ? (
                         <>
@@ -2787,13 +2908,13 @@ export default function PredictionsTab({
                         </>
                       ) : selectedPredictionIds.includes(pred.id) ? (
                         <>
-                          <Check className="w-3 h-3 text-current" />
-                          <span>{t.selected}</span>
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>{t.inBetslip || t.selected}</span>
                         </>
                       ) : (
                         <>
-                          <Plus className="w-3 h-3 text-emerald-400" />
-                          <span>{t.quickBet}</span>
+                          <Plus className="w-3.5 h-3.5 text-emerald-400 stroke-[2.5]" />
+                          <span>{t.addToBetslip || t.quickBet}</span>
                         </>
                       )}
                     </button>
@@ -2811,9 +2932,9 @@ export default function PredictionsTab({
 
       {/* QUICK BET COMBINATOR & SUMMARY CARD */}
       {(() => {
-        const selectedPredictions = predictions.filter(p => selectedPredictionIds.includes(p.id));
+        const selectedPredictions = allPoolPredictions.filter(p => selectedPredictionIds.includes(p.id));
         const combinedOdds = selectedPredictions.length > 0 
-          ? selectedPredictions.reduce((acc, p) => acc * p.odds, 1) 
+          ? selectedPredictions.reduce((acc, p) => acc * (p.modelFairOdds || p.odds), 1) 
           : 0;
         const avgConfidence = selectedPredictions.length > 0 
           ? Math.round(selectedPredictions.reduce((acc, p) => acc + p.confidence, 0) / selectedPredictions.length) 
@@ -2823,7 +2944,7 @@ export default function PredictionsTab({
         const quickBetProfit = Math.max(0, quickBetReturns - parsedQuickBetStake);
 
         return (
-          <div className="bg-gradient-to-br from-zinc-950 to-zinc-900/80 border border-zinc-800/80 rounded-2xl p-6 mt-8 space-y-6 shadow-2xl relative overflow-hidden" id="quick-bet-summary-widget">
+          <div className="bg-gradient-to-br from-zinc-950 to-zinc-900/80 border border-zinc-800/80 rounded-2xl p-6 mt-8 space-y-6 shadow-2xl relative overflow-hidden" id="custom-betslip-combinator">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/60 pb-4">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-emerald-950/50 border border-emerald-900/30 rounded-xl text-emerald-400">
@@ -2938,8 +3059,16 @@ export default function PredictionsTab({
                         <span className="text-[9px] font-mono text-gray-400">Currency: {selectedCurrency}</span>
                       </div>
                       <input
+                        name="quick_bet_stake_amount"
                         type="number"
                         min="1"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        data-form-type="other"
                         value={quickBetStake}
                         onChange={(e) => setQuickBetStake(e.target.value)}
                         placeholder="Enter custom stake..."
@@ -3187,6 +3316,76 @@ export default function PredictionsTab({
                   )}
                 </div>
 
+                {/* 5-Model Ensemble Statistical Architecture Breakdown */}
+                {selectedPrediction.ensembleBreakdown && (
+                  <div className="bg-zinc-950/90 border border-violet-900/40 rounded-xl p-4 space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-violet-950/80 border border-violet-500/30 text-violet-400 rounded-lg">
+                          <Layers className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <h5 className="text-xs font-bold text-white font-sans flex items-center gap-1.5">
+                            5-Model Ensemble Prediction Architecture
+                          </h5>
+                          <p className="text-[10px] text-gray-400 font-mono">
+                            Sub-Model Consensus: <strong className="text-violet-400 font-sans">{selectedPrediction.ensembleBreakdown.modelAgreement}%</strong> agreement
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/50 border border-emerald-800/50 px-2 py-0.5 rounded-full">
+                        {selectedPrediction.ensembleBreakdown.confidenceCategory}
+                      </span>
+                    </div>
+
+                    {isUnlocked ? (
+                      <div className="space-y-2.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {Object.entries(selectedPrediction.ensembleBreakdown.models).map(([key, modelData]) => {
+                            const model = modelData as { name: string; probability: number; weight: number; [k: string]: any };
+                            return (
+                              <div key={key} className="bg-zinc-900/70 border border-zinc-800/80 rounded-lg p-2.5 space-y-1.5">
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className="text-gray-300 font-medium">{model.name}</span>
+                                  <span className="font-mono font-bold text-violet-400">{model.probability}%</span>
+                                </div>
+                                <div className="w-full bg-zinc-950 rounded-full h-1.5 overflow-hidden">
+                                  <div 
+                                    className="bg-violet-500 h-full rounded-full transition-all" 
+                                    style={{ width: `${Math.min(model.probability, 100)}%` }}
+                                  />
+                                </div>
+                                <div className="flex justify-between items-center text-[10px] text-gray-500 font-mono">
+                                  <span>Weight: {Math.round(model.weight * 100)}%</span>
+                                  <span>
+                                    {model.edgeScore !== undefined ? `Edge: ${model.edgeScore > 0 ? '+' : ''}${model.edgeScore}` :
+                                     model.ratingDiff !== undefined ? `Elo Δ: ${model.ratingDiff > 0 ? '+' : ''}${model.ratingDiff}` :
+                                     model.xgDiff !== undefined ? `xG Δ: ${model.xgDiff > 0 ? '+' : ''}${model.xgDiff}` :
+                                     model.formTrend !== undefined ? `Trend: ${model.formTrend}` :
+                                     model.featureScore !== undefined ? `Score: ${model.featureScore}` : ''}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between text-[10px] font-mono text-gray-400 border-t border-zinc-900 pt-2 gap-2">
+                          <span>Data Reliability: <strong className="text-emerald-400 font-sans">{selectedPrediction.ensembleBreakdown.sourceReliabilityScore}%</strong></span>
+                          <span>Telemetry Age: <strong className="text-zinc-200">{selectedPrediction.ensembleBreakdown.dataFreshnessMinutes}m ago</strong></span>
+                          {selectedPrediction.ensembleBreakdown.brierScoreTarget && (
+                            <span>Brier Target: <strong className="text-zinc-300">{selectedPrediction.ensembleBreakdown.brierScoreTarget}</strong></span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-zinc-900/40 rounded-lg border border-zinc-800 text-center">
+                        <p className="text-xs text-amber-400 font-mono">🔒 Individual 5-model distribution matrix unlocked with VIP subscription.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* 10+ Multi-Variables Breakdown Checklist */}
                 {isUnlocked ? (
                   <div className="space-y-4">
@@ -3319,8 +3518,16 @@ export default function PredictionsTab({
                             💰 {t.bankrollLabel || "Your Total Betting Bankroll"} ({selectedCurrency})
                           </label>
                           <input
+                            name="custom_kelly_bankroll_input"
                             type="number"
                             min="10"
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                            spellCheck={false}
+                            data-lpignore="true"
+                            data-1p-ignore="true"
+                            data-form-type="other"
                             value={customKellyBankroll}
                             onChange={(e) => setCustomKellyBankroll(e.target.value)}
                             className="w-full bg-zinc-900 border border-zinc-800/80 hover:border-zinc-700/80 focus:border-emerald-500 focus:outline-none rounded-xl px-3 py-2 text-xs font-mono text-white transition-colors"
@@ -3553,12 +3760,40 @@ export default function PredictionsTab({
               </div>
 
               {/* Footer */}
-              <div className="p-6 border-t border-zinc-800 bg-zinc-950/40 rounded-b-2xl flex justify-between items-center text-xs">
+              <div className="p-5 border-t border-zinc-800 bg-zinc-950/70 rounded-b-2xl flex flex-wrap justify-between items-center gap-3 text-xs">
                 {isUnlocked ? (
                   <>
-                    <span className="text-gray-400">
-                      Recommended bet selection: <strong className="text-white">{selectedPrediction.pick}</strong>
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          togglePredictionSelection(selectedPrediction, e);
+                        }}
+                        className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                          selectedPredictionIds.includes(selectedPrediction.id)
+                            ? 'bg-emerald-500 text-black border-emerald-400 font-bold shadow-md shadow-emerald-500/20'
+                            : 'bg-zinc-900 hover:bg-zinc-800 text-emerald-400 border-zinc-700/80 hover:border-emerald-500/50'
+                        }`}
+                        title={selectedPredictionIds.includes(selectedPrediction.id) ? (language === 'sw' ? "Ondoa kwenye jamvi" : "Remove from custom betslip") : (language === 'sw' ? "Weka kwenye jamvi lako (+)" : "Add this pick to custom betslip builder (+)")}
+                      >
+                        {selectedPredictionIds.includes(selectedPrediction.id) ? (
+                          <>
+                            <Check className="w-4 h-4 stroke-[3]" />
+                            <span className="font-semibold">{t.inBetslip || "In Betslip"}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-4 h-4 text-emerald-400 stroke-[2.5]" />
+                            <span className="font-semibold">{t.addToBetslip || "Add to Betslip"}</span>
+                          </>
+                        )}
+                      </button>
+
+                      <span className="text-gray-400">
+                        Pick: <strong className="text-white font-bold ml-1">{selectedPrediction.pick}</strong>
+                      </span>
+                    </div>
+
                     <span className={`bg-emerald-950 border border-emerald-800/40 font-mono font-bold px-3 py-1.5 rounded-lg ${getOddsColorClass(selectedPrediction.odds, "text-emerald-400")}`}>
                       Odds @{selectedPrediction.odds.toFixed(2)}
                     </span>
@@ -3586,6 +3821,40 @@ export default function PredictionsTab({
           </div>
         )}
       </AnimatePresence>
+
+      {/* FLOATING QUICK BETSLIP BAR WHEN PICKS SELECTED */}
+      {selectedPredictionIds.length > 0 && (
+        <aside aria-label="Quick betslip summary" className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-zinc-950/95 border border-emerald-500/40 backdrop-blur-xl px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-emerald-500 text-black font-bold font-mono text-xs flex items-center justify-center shadow-sm">
+              {selectedPredictionIds.length}
+            </span>
+            <span className="text-xs font-bold text-white hidden sm:inline">
+              {language === 'sw' ? 'Mechi kwenye Jamvi' : 'Picks in Custom Betslip'}
+            </span>
+          </div>
+
+          <div className="h-4 w-px bg-zinc-800"></div>
+
+          <div className="text-xs font-mono text-emerald-400 font-bold">
+            @{allPoolPredictions.filter(p => selectedPredictionIds.includes(p.id)).reduce((acc, p) => acc * (p.modelFairOdds || p.odds), 1).toFixed(2)} Total Odds
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              const el = document.getElementById('custom-betslip-combinator');
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }}
+            className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs px-3 py-1.5 rounded-xl transition-transform active:scale-95 cursor-pointer flex items-center gap-1 shadow-md shadow-emerald-500/20"
+          >
+            <span>{t.viewBetslip || "View Betslip"}</span>
+            <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
+          </button>
+        </aside>
+      )}
 
       {/* FLOATING TOAST NOTIFICATIONS PORTAL */}
       <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 max-w-sm w-full pointer-events-none">

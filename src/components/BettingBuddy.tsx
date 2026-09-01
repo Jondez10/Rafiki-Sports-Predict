@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Send, Sparkles, MessageSquare, BookOpen, AlertCircle, HelpCircle } from 'lucide-react';
+import { APP_LOGO } from '../assets';
 
 interface Message {
   id: string;
@@ -213,7 +214,7 @@ export default function BettingBuddy({ isOpen, onClose, language, translations }
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full ring-1 ring-emerald-500/40 overflow-hidden bg-zinc-950 flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/20">
                   <img 
-                    src="/src/assets/images/rafiki_app_logo_1787728334689.jpg" 
+                    src={APP_LOGO} 
                     alt="Rafiki Predict Logo"
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover"

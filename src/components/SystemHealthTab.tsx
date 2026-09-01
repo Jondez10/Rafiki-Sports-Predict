@@ -836,9 +836,14 @@ export default function SystemHealthTab({
                   <div className="flex items-center gap-2 flex-wrap shrink-0">
                     <div className="flex items-center gap-1 bg-zinc-950 border border-zinc-800 rounded-lg p-1">
                       <input 
+                        name={`match_home_score_${pred.id}`}
                         type="number"
                         min="0"
                         max="20"
+                        autoComplete="off"
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        data-form-type="other"
                         placeholder="H"
                         value={scores.homeScore}
                         onChange={(e) => setManualScores(prev => ({
@@ -850,9 +855,14 @@ export default function SystemHealthTab({
                       />
                       <span className="text-zinc-600 text-xs">:</span>
                       <input 
+                        name={`match_away_score_${pred.id}`}
                         type="number"
                         min="0"
                         max="20"
+                        autoComplete="off"
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        data-form-type="other"
                         placeholder="A"
                         value={scores.awayScore}
                         onChange={(e) => setManualScores(prev => ({

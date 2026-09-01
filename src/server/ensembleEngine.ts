@@ -739,9 +739,23 @@ export function computeEnsemblePrediction(input?: MatchAnalysisInput | null): En
     riskLevel = 'High';
   }
 
-  const modelFairOdds = Math.round((1 / Math.max(0.01, chosenProb)) * 100) / 100;
-  const suggestedOdds = Math.round((modelFairOdds * 1.05) * 100) / 100;
+  const modelFairOdds = Math.max(1.05, Math.round((1 / Math.max(0.01, chosenProb)) * 100) / 100);
+  // Accurate true odds calculation matching the mathematical probability and market consensus without arbitrary markup
+  const suggestedOdds = modelFairOdds;
   const expectedValue = Math.round((suggestedOdds * chosenProb) * 100) / 100;
+
+  // Helper to extract the specific model probability for the chosen pick across all 5 sub-models
+  const getSubModelPickProb = (model: { homeWinProb: number; drawProb: number; awayWinProb: number; over25Prob: number; under25Prob: number; bttsYesProb: number }) => {
+    if (marketOptionType === '1x2_winner' && pickName.includes(homeTeamName)) return model.homeWinProb;
+    if (marketOptionType === '1x2_winner' && pickName.includes(awayTeamName)) return model.awayWinProb;
+    if (marketOptionType === '1x2_winner' && pickName.toLowerCase().includes('draw')) return model.drawProb;
+    if (marketOptionType === 'over') return model.over25Prob;
+    if (marketOptionType === 'under') return model.under25Prob;
+    if (marketOptionType === 'btts') return model.bttsYesProb;
+    if (marketOptionType === 'double_chance' && pickName.includes('1X')) return Math.min(0.99, model.homeWinProb + model.drawProb);
+    if (marketOptionType === 'double_chance' && pickName.includes('X2')) return Math.min(0.99, model.drawProb + model.awayWinProb);
+    return model.homeWinProb;
+  };
 
   // 7. Context-Aware Analytical Explanation & Key Drivers
   const plainLanguageFactors: string[] = [
@@ -752,7 +766,7 @@ export function computeEnsemblePrediction(input?: MatchAnalysisInput | null): En
     `Fatigue & Rest: Momentum index indicates ${m4.formTrend} with ${input.homeRestDays || 5} vs ${input.awayRestDays || 4} days preparation time.`
   ];
 
-  const aiExplanation = `Ensemble AI evaluated 5 statistical engines across ${leagueProfile.name}. Sub-model agreement is ${modelAgreementPct}%. Selected pick "${pickName}" demonstrates an analytical probability of ${(chosenProb * 100).toFixed(1)}% (Fair Odds ${modelFairOdds}). Key tactical drivers include superior box entries, sustained xG differential (+${m3.xgDiff.toFixed(2)}), and positive Elo trajectory.`;
+  const aiExplanation = `Ensemble AI evaluated 5 statistical engines across ${leagueProfile.name}. Sub-model agreement is ${modelAgreementPct}%. Selected pick "${pickName}" demonstrates an analytical probability of ${(chosenProb * 100).toFixed(1)}% (Fair Odds @${modelFairOdds}). Key tactical drivers include superior box entries, sustained xG differential (+${m3.xgDiff.toFixed(2)}), and positive Elo trajectory.`;
 
   const finalPrediction: Prediction = {
     id: `ens-${input.match.id}`,
@@ -773,7 +787,7 @@ export function computeEnsemblePrediction(input?: MatchAnalysisInput | null): En
       formAnalysis: `${homeTeamName} past ${input.homeStats.matchesPlayed} games form vs ${awayTeamName} past ${input.awayStats.matchesPlayed} games.`,
       injuryImpact: input.homeInjuriesCount || input.awayInjuriesCount ? `${input.homeInjuriesCount || 0} home absences vs ${input.awayInjuriesCount || 0} away absences considered.` : 'Standard squad availability verified.',
       tacticalMatchup: `Elo differential (${m2.ratingDiff} pts) and xG matchup favor ${m3.xgDiff >= 0 ? homeTeamName : awayTeamName}.`,
-      oddsMovement: `Model fair price computed at ${modelFairOdds}. Secondary market signal aligned.`,
+      oddsMovement: `Model fair price accurately computed at @${modelFairOdds}. Secondary market signal aligned.`,
       otherFactors: `Rest differential (${input.homeRestDays || 5}d vs ${input.awayRestDays || 4}d), home advantage weight (${leagueProfile.homeAdvantageFactor}x) applied.`
     },
     result: 'pending',
@@ -794,11 +808,11 @@ export function computeEnsemblePrediction(input?: MatchAnalysisInput | null): En
       modelAgreement: modelAgreementPct,
       confidenceCategory,
       models: {
-        poisson: { name: 'Poisson Rate Engine', probability: Math.round(m1.homeWinProb * 100), weight: weights.poisson, edgeScore: m1.lambdaHome - m1.lambdaAway },
-        eloBayesian: { name: 'Elo Power Model', probability: Math.round(m2.homeWinProb * 100), weight: weights.eloBayesian, ratingDiff: m2.ratingDiff },
-        xgMatchup: { name: 'xG Tactical Matchup', probability: Math.round(m3.homeWinProb * 100), weight: weights.xgMatchup, xgDiff: m3.xgDiff },
-        momentumFatigue: { name: 'Form & Momentum Decay', probability: Math.round(m4.homeWinProb * 100), weight: weights.momentumFatigue, formTrend: m4.formTrend },
-        deepClassifier: { name: 'Deep Feature Classifier', probability: Math.round(m5.homeWinProb * 100), weight: weights.deepClassifier, featureScore: m5.featureScore }
+        poisson: { name: 'Poisson Rate Engine', probability: Math.round(getSubModelPickProb(m1) * 100), weight: weights.poisson, edgeScore: Math.round((m1.lambdaHome - m1.lambdaAway) * 100) / 100 },
+        eloBayesian: { name: 'Elo Power Model', probability: Math.round(getSubModelPickProb(m2) * 100), weight: weights.eloBayesian, ratingDiff: m2.ratingDiff },
+        xgMatchup: { name: 'xG Tactical Matchup', probability: Math.round(getSubModelPickProb(m3) * 100), weight: weights.xgMatchup, xgDiff: m3.xgDiff },
+        momentumFatigue: { name: 'Form & Momentum Decay', probability: Math.round(getSubModelPickProb(m4) * 100), weight: weights.momentumFatigue, formTrend: m4.formTrend },
+        deepClassifier: { name: 'Deep Feature Classifier', probability: Math.round(getSubModelPickProb(m5) * 100), weight: weights.deepClassifier, featureScore: m5.featureScore }
       },
       sourceReliabilityScore: validation.sourceReliabilityPct,
       dataFreshnessMinutes: validation.freshnessMinutes,

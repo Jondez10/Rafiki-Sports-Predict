@@ -1,4 +1,5 @@
 import { auth } from './firebase';
+import { getActiveSessionToken, getDeviceFingerprint } from './accessKeySession';
 
 /**
  * Get the current user's Firebase ID token for Authorization header.
@@ -16,15 +17,36 @@ export async function getAuthToken(): Promise<string | null> {
 }
 
 /**
- * Wrapper around fetch that automatically includes Authorization: Bearer <idToken>
- * and Content-Type: application/json (if body is present and not FormData).
+ * Wrapper around fetch that automatically includes:
+ * - Authorization: Bearer <idToken> (if authenticated)
+ * - X-Session-Token: <accessSessionToken> (if active access key)
+ * - X-Device-Fingerprint: <fingerprint>
+ * - X-Admin-Secret: <adminSecretKey> (if admin unlocked)
  */
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const token = await getAuthToken();
+  const sessionToken = getActiveSessionToken();
+  const deviceFp = getDeviceFingerprint();
+  const adminSecret = localStorage.getItem('rafiki_admin_secret_key');
+  
   const headers = new Headers(options.headers || {});
 
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
+  } else if (sessionToken) {
+    headers.set('Authorization', `Bearer ${sessionToken}`);
+  }
+
+  if (sessionToken) {
+    headers.set('X-Session-Token', sessionToken);
+  }
+
+  if (deviceFp) {
+    headers.set('X-Device-Fingerprint', deviceFp);
+  }
+
+  if (adminSecret) {
+    headers.set('X-Admin-Secret', adminSecret);
   }
 
   return fetch(url, {
@@ -32,3 +54,4 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
     headers
   });
 }
+

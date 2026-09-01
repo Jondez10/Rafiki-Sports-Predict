@@ -43,13 +43,23 @@
   animation: slideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Custom modern scrollbars for far-end vertical and bottom horizontal navigation */
+/* Smooth scrolling for responsive page motion */
 html {
   overflow-x: auto;
   overflow-y: scroll;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: #10b981 #09090b;
+  scroll-behavior: smooth;
+}
+
+/* Hide scrollbars on mobile swiper navbars while maintaining native scrollability */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 ::-webkit-scrollbar {

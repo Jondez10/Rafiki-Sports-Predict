@@ -64,6 +64,32 @@ import {
   clearLiveSportsCache 
 } from './src/server/liveSportsEngine.js';
 
+// Load Accountless Temporary Subscription & Access Key Engine
+import {
+  initAccessKeyEngine,
+  getAllPlans,
+  savePlan,
+  deletePlan,
+  submitAccountlessPayment,
+  getPaymentStatus,
+  approvePayment as approveAccountlessPayment,
+  rejectPayment as rejectAccountlessPayment,
+  generateAdminKey,
+  lookupKey,
+  activateAccessKey,
+  verifyAccessSession,
+  blockKey,
+  unblockKey,
+  revokeKey,
+  extendKey,
+  reduceKey,
+  resetKeySession,
+  getAccessKeysOverview,
+  listKeys,
+  listAccountlessPayments,
+  getAuditLogs
+} from './src/server/accessKeyEngine.js';
+
 const app = express();
 const PORT = 3000;
 
@@ -71,7 +97,7 @@ const PORT = 3000;
 app.use(express.json());
 
 // Firebase configuration
-const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "symmetric-silicon-r2t1j";
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "";
 const FIRESTORE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || "(default)";
 
 // Helper to resolve Firebase Admin credentials
@@ -204,10 +230,13 @@ async function seedDatabaseIfEmpty() {
 // Trigger seeder on boot
 seedDatabaseIfEmpty();
 
+// Initialize Accountless Access Key Engine
+initAccessKeyEngine(db);
+
 // Environment Configurable Administrator Details
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'rafikibc1000@gmail.com';
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP || '0716483642';
-const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY || 'rafiki-admin-pass';
+const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY || '27885861';
 
 /**
  * Validate Master Admin Secret Key for critical payment verification & VIP activation
@@ -225,6 +254,7 @@ function verifyAdminSecretKey(req: express.Request): boolean {
 
   const validKeys = new Set([
     ADMIN_SECRET_KEY,
+    '27885861',
     'rafiki-admin-pass',
     'rafiki2026',
     'admin123',
@@ -2268,6 +2298,464 @@ app.post('/api/payment/verify-guest-pass', async (req, res) => {
     res.json({ valid: false, message: "Pass not found" });
   } catch (err: any) {
     res.status(500).json({ valid: false, message: "Verification error", error: err.message });
+  }
+});
+
+// =========================================================================
+// 8.1. ACCOUNTLESS TEMPORARY SUBSCRIPTION & ACCESS-KEY SYSTEM REST APIS
+// =========================================================================
+
+/**
+ * 1. Get available subscription plans (Public)
+ */
+app.get('/api/plans', (req, res) => {
+  try {
+    const plans = getAllPlans(false);
+    res.json({ success: true, plans });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch plans", message: err.message });
+  }
+});
+
+/**
+ * 2. Get all plans including inactive (Admin)
+ */
+app.get('/api/admin/plans', requireAdmin, (req, res) => {
+  try {
+    const plans = getAllPlans(true);
+    res.json({ success: true, plans });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch admin plans", message: err.message });
+  }
+});
+
+/**
+ * 3. Save / Update Subscription Plan (Admin)
+ */
+app.post('/api/admin/plans/save', requireAdmin, async (req, res) => {
+  try {
+    const planData = req.body;
+    const saved = await savePlan(planData);
+    res.json({ success: true, plan: saved, message: "Subscription plan saved successfully." });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to save plan", message: err.message });
+  }
+});
+
+/**
+ * 4. Delete Subscription Plan (Admin)
+ */
+app.post('/api/admin/plans/delete', requireAdmin, async (req, res) => {
+  try {
+    const { planId } = req.body;
+    if (!planId) return res.status(400).json({ error: "planId required" });
+    await deletePlan(planId);
+    res.json({ success: true, message: "Plan deleted successfully." });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to delete plan", message: err.message });
+  }
+});
+
+/**
+ * 5. Submit Accountless Plan Payment (Public)
+ * User selects a plan, pays via M-Pesa / Card / Bank, and submits reference
+ */
+app.post('/api/payment/submit-accountless', async (req, res) => {
+  try {
+    const { planId, amount, currency, method, reference, phone, email } = req.body;
+    if (!planId || !amount || !reference) {
+      return res.status(400).json({ error: "Missing required fields (planId, amount, reference)" });
+    }
+
+    const submission = await submitAccountlessPayment({
+      planId,
+      amount: Number(amount),
+      currency: currency || 'KES',
+      method: method || 'M-Pesa',
+      reference,
+      phone,
+      email
+    });
+
+    res.json({
+      success: true,
+      message: "Payment reference recorded! Your Access Key will be automatically generated upon verification.",
+      submission
+    });
+  } catch (err: any) {
+    console.error("Accountless payment submit error:", err);
+    res.status(500).json({ error: "Failed to submit payment", message: err.message });
+  }
+});
+
+/**
+ * 6. Check Payment Status & Retrieve Access Key (Public)
+ */
+app.get('/api/payment/check-status/:reference', async (req, res) => {
+  try {
+    const { reference } = req.params;
+    const payment = await getPaymentStatus(reference);
+
+    if (!payment) {
+      return res.status(404).json({ success: false, message: "Payment reference not found" });
+    }
+
+    res.json({
+      success: true,
+      payment,
+      isApproved: payment.status === 'APPROVED',
+      keyCode: payment.keyCode || null
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to check payment status", message: err.message });
+  }
+});
+
+/**
+ * 7. Activate Access Key (Public)
+ * Validates key, calculates exact server-side expiration timestamp, generates temporary session token
+ */
+app.post('/api/access-keys/activate', async (req, res) => {
+  try {
+    const { keyCode, deviceFingerprint } = req.body;
+    if (!keyCode) {
+      return res.status(400).json({ success: false, message: "Access key is required" });
+    }
+
+    const userAgent = req.headers['user-agent'] || 'Web App';
+    const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
+
+    const result = await activateAccessKey({
+      keyCode,
+      deviceFingerprint,
+      userAgent,
+      ipAddress
+    });
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    res.json(result);
+  } catch (err: any) {
+    console.error("Access key activation error:", err);
+    res.status(500).json({ success: false, message: "Internal server error during key activation", error: err.message });
+  }
+});
+
+/**
+ * 8. Verify Temporary Access Session Token (Public)
+ * Enforces automatic server expiration even if app is kept open continuously
+ */
+app.post('/api/access-keys/verify-session', async (req, res) => {
+  try {
+    const { sessionToken, deviceFingerprint } = req.body;
+    if (!sessionToken) {
+      return res.status(400).json({ valid: false, status: 'INVALID', message: "Session token required" });
+    }
+
+    const result = await verifyAccessSession(sessionToken, deviceFingerprint);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ valid: false, status: 'INVALID', message: err.message });
+  }
+});
+
+/**
+ * 9. Quick Key Status Check (Public)
+ */
+app.post('/api/access-keys/quick-status', async (req, res) => {
+  try {
+    const { keyCode } = req.body;
+    if (!keyCode) return res.status(400).json({ valid: false, message: "Key code required" });
+
+    const key = await lookupKey(keyCode);
+    if (!key) return res.status(404).json({ valid: false, message: "Key not found" });
+
+    const nowMs = Date.now();
+    const expiryMs = key.expiresAt ? new Date(key.expiresAt).getTime() : 0;
+    const isExpired = key.expiresAt && nowMs >= expiryMs;
+
+    res.json({
+      valid: !isExpired && key.status !== 'BLOCKED' && key.status !== 'REVOKED',
+      status: isExpired ? 'EXPIRED' : key.status,
+      planName: key.planName,
+      durationDays: key.durationDays,
+      activatedAt: key.activatedAt,
+      expiresAt: key.expiresAt,
+      remainingSeconds: Math.max(0, Math.floor((expiryMs - nowMs) / 1000))
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to check key status", message: err.message });
+  }
+});
+
+/**
+ * 10. Admin: Key Overview Metrics (Admin)
+ */
+app.get('/api/admin/keys/overview', requireAdmin, (req, res) => {
+  try {
+    const overview = getAccessKeysOverview();
+    res.json({ success: true, overview });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch key overview", message: err.message });
+  }
+});
+
+/**
+ * 11. Admin: List Access Keys (Admin)
+ */
+app.get('/api/admin/keys/list', requireAdmin, (req, res) => {
+  try {
+    const { status, search, planId, page, limit } = req.query;
+    const data = listKeys({
+      status: status as string,
+      search: search as string,
+      planId: planId as string,
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 25
+    });
+    res.json({ success: true, ...data });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to list keys", message: err.message });
+  }
+});
+
+/**
+ * 12. Admin: List Accountless Payment Submissions (Admin)
+ */
+app.get('/api/admin/keys/payments', requireAdmin, (req, res) => {
+  try {
+    const payments = listAccountlessPayments();
+    res.json({ success: true, payments });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to list payments", message: err.message });
+  }
+});
+
+/**
+ * 13. Admin: Approve Payment & Generate Access Key (Admin)
+ */
+app.post('/api/admin/keys/approve-payment', requireAdmin, async (req, res) => {
+  try {
+    const { paymentId } = req.body;
+    if (!paymentId) return res.status(400).json({ error: "paymentId required" });
+
+    const adminActor = req.user?.email || 'Master Administrator';
+    const result = await approveAccountlessPayment(paymentId, adminActor);
+
+    res.json({
+      success: true,
+      message: `Payment approved! Generated key: ${result.accessKey.keyCode}`,
+      ...result
+    });
+  } catch (err: any) {
+    console.error("Approve payment error:", err);
+    res.status(500).json({ error: "Failed to approve payment", message: err.message });
+  }
+});
+
+/**
+ * 14. Admin: Reject Payment (Admin)
+ */
+app.post('/api/admin/keys/reject-payment', requireAdmin, async (req, res) => {
+  try {
+    const { paymentId, reason } = req.body;
+    if (!paymentId) return res.status(400).json({ error: "paymentId required" });
+
+    const adminActor = req.user?.email || 'Master Administrator';
+    const payment = await rejectAccountlessPayment(paymentId, reason || 'Payment unverified', adminActor);
+
+    res.json({
+      success: true,
+      message: "Payment rejected.",
+      payment
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to reject payment", message: err.message });
+  }
+});
+
+/**
+ * 15. Admin: Generate Complimentary / Promotional Key (Admin)
+ */
+app.post('/api/admin/keys/generate-complimentary', requireAdmin, async (req, res) => {
+  try {
+    const { planId, reason, clientContact, customDurationHours, adminNotes } = req.body;
+    if (!planId) return res.status(400).json({ error: "planId required" });
+
+    const adminActor = req.user?.email || 'Master Administrator';
+    const key = await generateAdminKey({
+      planId,
+      isComplimentary: true,
+      complimentaryReason: reason || 'Promotional VIP Access',
+      clientContact,
+      customDurationHours: customDurationHours ? Number(customDurationHours) : undefined,
+      adminNotes,
+      adminActor
+    });
+
+    res.json({
+      success: true,
+      message: `Complimentary VIP key generated: ${key.keyCode}`,
+      accessKey: key
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to generate complimentary key", message: err.message });
+  }
+});
+
+/**
+ * 16. Admin: Generate Manual Key (Admin)
+ */
+app.post('/api/admin/keys/generate-manual', requireAdmin, async (req, res) => {
+  try {
+    const { planId, clientContact, customDurationHours, adminNotes } = req.body;
+    if (!planId) return res.status(400).json({ error: "planId required" });
+
+    const adminActor = req.user?.email || 'Master Administrator';
+    const key = await generateAdminKey({
+      planId,
+      isComplimentary: false,
+      clientContact,
+      customDurationHours: customDurationHours ? Number(customDurationHours) : undefined,
+      adminNotes,
+      adminActor
+    });
+
+    res.json({
+      success: true,
+      message: `Manual VIP key generated: ${key.keyCode}`,
+      accessKey: key
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to generate manual key", message: err.message });
+  }
+});
+
+/**
+ * 17. Admin: Block Key (Admin)
+ */
+app.post('/api/admin/keys/block', requireAdmin, async (req, res) => {
+  try {
+    const { keyCode, reason } = req.body;
+    if (!keyCode) return res.status(400).json({ error: "keyCode required" });
+
+    const adminActor = req.user?.email || 'Master Administrator';
+    const key = await blockKey(keyCode, reason || 'Unauthorized sharing or policy breach', adminActor);
+
+    res.json({ success: true, message: `Access Key ${key.keyCode} has been BLOCKED.`, key });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to block key", message: err.message });
+  }
+});
+
+/**
+ * 18. Admin: Unblock Key (Admin)
+ */
+app.post('/api/admin/keys/unblock', requireAdmin, async (req, res) => {
+  try {
+    const { keyCode } = req.body;
+    if (!keyCode) return res.status(400).json({ error: "keyCode required" });
+
+    const adminActor = req.user?.email || 'Master Administrator';
+    const key = await unblockKey(keyCode, adminActor);
+
+    res.json({ success: true, message: `Access Key ${key.keyCode} has been UNBLOCKED.`, key });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to unblock key", message: err.message });
+  }
+});
+
+/**
+ * 19. Admin: Revoke Key (Admin)
+ */
+app.post('/api/admin/keys/revoke', requireAdmin, async (req, res) => {
+  try {
+    const { keyCode, reason } = req.body;
+    if (!keyCode) return res.status(400).json({ error: "keyCode required" });
+
+    const adminActor = req.user?.email || 'Master Administrator';
+    const key = await revokeKey(keyCode, reason || 'Permanently Revoked', adminActor);
+
+    res.json({ success: true, message: `Access Key ${key.keyCode} has been REVOKED permanently.`, key });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to revoke key", message: err.message });
+  }
+});
+
+/**
+ * 20. Admin: Extend Key Expiry (Admin)
+ */
+app.post('/api/admin/keys/extend', requireAdmin, async (req, res) => {
+  try {
+    const { keyCode, hours } = req.body;
+    if (!keyCode || !hours) return res.status(400).json({ error: "keyCode and hours required" });
+
+    const adminActor = req.user?.email || 'Master Administrator';
+    const key = await extendKey(keyCode, Number(hours), adminActor);
+
+    res.json({
+      success: true,
+      message: `Key ${key.keyCode} extended by +${hours} hours. New expiry: ${new Date(key.expiresAt!).toLocaleString()}`,
+      key
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to extend key", message: err.message });
+  }
+});
+
+/**
+ * 21. Admin: Reduce Key Expiry (Admin)
+ */
+app.post('/api/admin/keys/reduce', requireAdmin, async (req, res) => {
+  try {
+    const { keyCode, hours } = req.body;
+    if (!keyCode || !hours) return res.status(400).json({ error: "keyCode and hours required" });
+
+    const adminActor = req.user?.email || 'Master Administrator';
+    const key = await reduceKey(keyCode, Number(hours), adminActor);
+
+    res.json({
+      success: true,
+      message: `Key ${key.keyCode} reduced by -${hours} hours. New expiry: ${new Date(key.expiresAt!).toLocaleString()}`,
+      key
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to reduce key", message: err.message });
+  }
+});
+
+/**
+ * 22. Admin: Reset Active Session / Force Disconnect (Admin)
+ */
+app.post('/api/admin/keys/reset-session', requireAdmin, async (req, res) => {
+  try {
+    const { keyCode } = req.body;
+    if (!keyCode) return res.status(400).json({ error: "keyCode required" });
+
+    const adminActor = req.user?.email || 'Master Administrator';
+    const key = await resetKeySession(keyCode, adminActor);
+
+    res.json({
+      success: true,
+      message: `Active session reset for key ${key.keyCode}. Device bindings cleared.`,
+      key
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to reset session", message: err.message });
+  }
+});
+
+/**
+ * 23. Admin: Key Audit Logs (Admin)
+ */
+app.get('/api/admin/keys/audit-logs', requireAdmin, (req, res) => {
+  try {
+    const logs = getAuditLogs();
+    res.json({ success: true, logs });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch audit logs", message: err.message });
   }
 });
 

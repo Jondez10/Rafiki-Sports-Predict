@@ -1,7 +1,7 @@
 {
   "projectId": "symmetric-silicon-r2t1j",
   "appId": "1:354839059532:web:c6a5bccb491a2104aca8e9",
-  "apiKey": "AIzaSyDKcBbUdNWMDN8c25Du261sNMgZNnmxWZE",
+  "apiKey": "REPLACE_WITH_VITE_FIREBASE_API_KEY",
   "authDomain": "symmetric-silicon-r2t1j.firebaseapp.com",
   "storageBucket": "symmetric-silicon-r2t1j.firebasestorage.app",
   "messagingSenderId": "354839059532",

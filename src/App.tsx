@@ -2,17 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { 
-  auth, 
   db, 
-  onAuthStateChanged, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  sendPasswordResetEmail,
-  updateProfile,
-  signInWithGoogle,
-  signInWithApple,
-  signInWithMicrosoft,
-  signOut,
   doc, 
   getDoc, 
   setDoc,
@@ -25,7 +15,6 @@ import {
   reconnectFirestore,
   logFirestoreError
 } from './lib/firebase';
-import { FirebaseUser } from './lib/firebase';
 import { 
   UserProfile, 
   Prediction, 
@@ -48,9 +37,6 @@ import {
   Phone, 
   Mail, 
   MessageSquare, 
-  LogOut, 
-  LogIn, 
-  UserPlus, 
   Lock, 
   Settings, 
   Share2,
@@ -78,10 +64,17 @@ import {
   Download,
   Users,
   Shield,
-  Cpu
+  ShieldCheck,
+  LayoutDashboard,
+  Cpu,
+  Key,
+  Eye,
+  EyeOff,
+  KeyRound
 } from 'lucide-react';
 
 import { translations } from './translations';
+import { APP_LOGO } from './assets';
 
 // Subcomponents
 import PredictionsTab from './components/PredictionsTab';
@@ -95,11 +88,9 @@ import GmailTab from './components/GmailTab';
 import BettingBuddy from './components/BettingBuddy';
 import CustomerSupportAgent from './components/CustomerSupportAgent';
 import AppBanner from './components/AppBanner';
-import AuthModal, { AuthMode } from './components/AuthModal';
-import AccountModal from './components/AccountModal';
+import { useAccessKeySession } from './lib/accessKeySession';
 import CommunityModal from './components/CommunityModal';
 import ScreenScrollControls from './components/ScreenScrollControls';
-import { signInWithGoogleGmail } from './lib/gmail';
 
 // Badge Definitions and Helpers
 export interface PerformanceBadge {
@@ -245,6 +236,63 @@ export default function App() {
   const [supportOpen, setSupportOpen] = useState(false);
   const [communityModalOpen, setCommunityModalOpen] = useState(false);
   const [shareSuccess, setShareSuccess] = useState(false);
+
+  // Admin Dashboard Password Verification Session State
+  const [isAdminVerified, setIsAdminVerified] = useState<boolean>(() => {
+    return sessionStorage.getItem('rafiki_admin_verified_session') === 'true' || localStorage.getItem('rafiki_admin_secret_key') === '27885861';
+  });
+  const [adminAuthModalOpen, setAdminAuthModalOpen] = useState(false);
+  const [adminAuthPassword, setAdminAuthPassword] = useState('');
+  const [showAdminAuthPassword, setShowAdminAuthPassword] = useState(false);
+  const [adminAuthError, setAdminAuthError] = useState('');
+  const [isAdminVerifying, setIsAdminVerifying] = useState(false);
+
+  // Admin Access Trigger Handler
+  const handleAdminTabAccess = () => {
+    if (isAdminVerified) {
+      setActiveTab('admin');
+    } else {
+      setAdminAuthPassword('');
+      setAdminAuthError('');
+      setAdminAuthModalOpen(true);
+    }
+  };
+
+  // Admin Password Verification Handler (Enforces '27885861')
+  const handleVerifyAdminPassword = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const candidate = adminAuthPassword.trim();
+    if (!candidate) {
+      setAdminAuthError(language === 'en' ? 'Please enter the administrator password.' : 'Tafadhali weka nenosiri la msimamizi.');
+      return;
+    }
+    setIsAdminVerifying(true);
+    setAdminAuthError('');
+
+    if (candidate === '27885861') {
+      setIsAdminVerified(true);
+      sessionStorage.setItem('rafiki_admin_verified_session', 'true');
+      sessionStorage.setItem('rafiki_admin_unlocked', 'true');
+      localStorage.setItem('rafiki_admin_secret_key', '27885861');
+      setAdminAuthModalOpen(false);
+      setAdminAuthPassword('');
+      setAdminAuthError('');
+      setActiveTab('admin');
+      setIsAdminVerifying(false);
+    } else {
+      setIsAdminVerifying(false);
+      setAdminAuthError(t.incorrectAdminPassword || 'Incorrect password. Access denied.');
+    }
+  };
+
+  // Lock Admin Session Handler
+  const handleLockAdminSession = () => {
+    setIsAdminVerified(false);
+    sessionStorage.removeItem('rafiki_admin_verified_session');
+    sessionStorage.removeItem('rafiki_admin_unlocked');
+    localStorage.removeItem('rafiki_admin_secret_key');
+    setActiveTab('predictions');
+  };
   const [expandedFaq, setExpandedFaq] = useState<string | null>(null);
   const [theme, setTheme] = useState<'midnight' | 'high-contrast'>(() => {
     return (localStorage.getItem('rafiki-theme') as 'midnight' | 'high-contrast') || 'high-contrast';
@@ -308,18 +356,18 @@ export default function App() {
     });
   };
   
-  // Auth States - Real Firebase Auth user & profile (null when signed out)
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [showAccountModal, setShowAccountModal] = useState(false);
-  const [authMode, setAuthMode] = useState<AuthMode>('signin');
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authDisplayName, setAuthDisplayName] = useState('');
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState('');
-  const [authSuccess, setAuthSuccess] = useState('');
+  // Accountless Session & VIP State
+  const accessKeySession = useAccessKeySession();
+  const userProfile: UserProfile = React.useMemo(() => ({
+    uid: accessKeySession.deviceFingerprint || 'usr_guest_vip',
+    email: '',
+    username: accessKeySession.isActive ? 'VIP Member' : 'Guest Visitor',
+    createdAt: new Date().toISOString(),
+    role: 'user',
+    subscriptionStatus: accessKeySession.isActive ? 'premium' : 'trial',
+    subscriptionPlan: accessKeySession.planName || 'VIP Access',
+    subscriptionExpiresAt: accessKeySession.expiresAt || undefined
+  }), [accessKeySession.isActive, accessKeySession.deviceFingerprint, accessKeySession.planName, accessKeySession.expiresAt]);
 
   // 1-Day Guest VIP Pass State (Stored locally for non-account daily purchasers)
   const [guestPass, setGuestPass] = useState<any>(() => {
@@ -442,12 +490,9 @@ export default function App() {
     console.info(`[SyncEngine][INFO][${stage}] ${message} (${timestamp})`, meta || {});
   };
 
-  // Monitor saved/bookmarked predictions in Firestore with localStorage fallback and reconnection logic
+  // Monitor saved/bookmarked predictions in localStorage
   useEffect(() => {
-    const currentUid = user?.uid || userProfile?.uid;
-    const localKey = `rafiki_saved_preds_${currentUid || 'usr_guest_vip'}`;
-
-    // 1. Load initial cached bookmarks from localStorage
+    const localKey = 'rafiki_saved_preds_usr_guest_vip';
     try {
       const localData = localStorage.getItem(localKey);
       if (localData) {
@@ -456,150 +501,6 @@ export default function App() {
     } catch (readErr) {
       logSyncError('SavedPredictionsLocalStorageRead', { localKey }, readErr);
     }
-
-    // 2. Real-time Firestore sync (only if user is authenticated)
-    if (!currentUid) {
-      return;
-    }
-
-    let unsubscribe = () => {};
-    try {
-      logSyncInfo('SavedPredictionsFirestore', `Initializing real-time listener for user: ${currentUid}`);
-      const q = query(collection(db, 'saved'), where('userId', '==', currentUid));
-      unsubscribe = onSnapshot(
-        q, 
-        (snapshot) => {
-          const docs: SavedPrediction[] = [];
-          snapshot.forEach((snapDoc) => {
-            docs.push(snapDoc.data() as SavedPrediction);
-          });
-          docs.sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
-          setSavedPredictions(docs);
-          logSyncInfo('SavedPredictionsFirestore', `Successfully synchronized ${docs.length} bookmarks from Firestore.`);
-          try {
-            localStorage.setItem(localKey, JSON.stringify(docs));
-          } catch (writeErr) {
-            logSyncError('SavedPredictionsLocalStorageWrite', { localKey, count: docs.length }, writeErr);
-          }
-        }, 
-        (firestoreErr) => {
-          logSyncError('SavedPredictionsFirestoreSnapshot', { userId: currentUid }, firestoreErr);
-          logFirestoreError('SavedPredictionsSnapshotListener', firestoreErr, { userId: currentUid });
-          // Attempt non-blocking Firestore network reconnect on snapshot drops
-          reconnectFirestore().catch(() => {});
-        }
-      );
-    } catch (initErr) {
-      logSyncError('SavedPredictionsFirestoreInit', { userId: currentUid }, initErr);
-      logFirestoreError('SavedPredictionsSnapshotInit', initErr, { userId: currentUid });
-    }
-
-    return () => {
-      unsubscribe();
-    };
-  }, [user?.uid, userProfile?.uid]);
-
-  // 1. Monitor Real Firebase User State & Profile Sync with Robust Retries
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        setUser(firebaseUser);
-        setShowAuthModal(false);
-        setSyncState(prev => ({ ...prev, stage: 'FirestoreUserProfile', status: 'syncing' }));
-
-        try {
-          // Sync with Firestore profile using resilient exponential backoff retry mechanism
-          const userRef = doc(db, 'users', firebaseUser.uid);
-          
-          const snap = await withFirestoreRetry(
-            () => getDoc(userRef),
-            {
-              maxRetries: 4,
-              initialDelayMs: 600,
-              maxDelayMs: 8000,
-              contextTag: `UserProfileFetch[${firebaseUser.uid}]`,
-              onRetry: (attempt, err, nextDelay) => {
-                logSyncError('UserProfileFetchRetry', { attempt, nextDelay, uid: firebaseUser.uid }, err);
-                setSyncState(prev => ({ ...prev, status: 'retrying', retryAttempt: attempt }));
-              }
-            }
-          );
-          
-          if (snap.exists()) {
-            const profile = snap.data() as UserProfile;
-            setUserProfile(profile);
-            localStorage.setItem('rafiki_user_session', JSON.stringify(profile));
-            logSyncInfo('FirestoreUserProfile', `Profile synchronized successfully for ${profile.email} (${profile.uid}).`);
-          } else {
-            // Create default profile for newly authenticated user with retry
-            const isTargetAdmin = firebaseUser.email === 'rafikibc1000@gmail.com' || firebaseUser.email === 'johnmushira@gmail.com';
-            const defaultProfile: UserProfile = {
-              uid: firebaseUser.uid,
-              email: firebaseUser.email || '',
-              username: firebaseUser.displayName || (firebaseUser.email || '').split('@')[0] || 'Member',
-              createdAt: new Date().toISOString(),
-              role: isTargetAdmin ? 'admin' : 'user',
-              subscriptionStatus: 'trial',
-              subscriptionPlan: 'Free Trial',
-              trialStartedAt: new Date().toISOString()
-            };
-            
-            await withFirestoreRetry(
-              () => setDoc(userRef, defaultProfile),
-              {
-                maxRetries: 3,
-                initialDelayMs: 800,
-                contextTag: `UserProfileCreate[${firebaseUser.uid}]`,
-                onRetry: (attempt, err, nextDelay) => {
-                  logSyncError('UserProfileCreateRetry', { attempt, nextDelay, uid: firebaseUser.uid }, err);
-                }
-              }
-            );
-
-            setUserProfile(defaultProfile);
-            localStorage.setItem('rafiki_user_session', JSON.stringify(defaultProfile));
-            logSyncInfo('FirestoreUserProfile', `Default profile generated and synchronized in Firestore for ${defaultProfile.email}.`);
-          }
-
-          setSyncState(prev => ({
-            ...prev,
-            status: 'synced',
-            lastSyncTime: new Date().toISOString(),
-            error: null,
-            retryAttempt: 0
-          }));
-        } catch (err: any) {
-          logSyncError('FirestoreUserProfileSync', { uid: firebaseUser.uid, email: firebaseUser.email }, err);
-          logFirestoreError('UserProfileSync', err, { uid: firebaseUser.uid });
-          
-          setSyncState(prev => ({
-            ...prev,
-            status: 'error',
-            error: `User Profile Sync Notice: ${err?.message || 'Database connection error'}`,
-            retryAttempt: 0
-          }));
-
-          // Fallback to local session if Firestore was unreachable
-          try {
-            const cachedSession = localStorage.getItem('rafiki_user_session');
-            if (cachedSession) {
-              setUserProfile(JSON.parse(cachedSession));
-              logSyncInfo('FirestoreUserProfile', 'Loaded user profile from localStorage fallback cache.');
-            }
-          } catch (storageErr) {
-            logSyncError('UserProfileLocalStorageFallback', {}, storageErr);
-          }
-        }
-      } else {
-        // Genuine signed-out guest state (null)
-        setUser(null);
-        setUserProfile(null);
-        localStorage.removeItem('rafiki_user_session');
-        setSyncState(prev => ({ ...prev, stage: null, error: null }));
-      }
-    });
-
-    return () => unsubscribe();
   }, []);
 
   // Helper to safely parse API JSON responses with explicit error logging
@@ -636,31 +537,33 @@ export default function App() {
 
     try {
       const headers: Record<string, string> = {};
-      if (user?.uid) {
-        headers['x-user-uid'] = user.uid;
+      if (accessKeySession.deviceFingerprint) {
+        headers['x-device-fingerprint'] = accessKeySession.deviceFingerprint;
       }
-      const uidQuery = user?.uid ? `?uid=${encodeURIComponent(user.uid)}` : '';
+      if (accessKeySession.keyCode) {
+        headers['x-session-token'] = accessKeySession.keyCode;
+      }
 
       logSyncInfo('PlatformDataSync', `Synchronizing platform data (Attempt ${retryAttempt + 1}/${maxRetries + 1})...`);
 
       const [pRes, aRes, artRes, nRes, sRes] = await Promise.all([
-        fetch(`/api/predictions${uidQuery}`, { headers }).catch(err => {
+        fetch(`/api/predictions`, { headers }).catch(err => {
           logSyncError('FetchPredictionsEndpoint', { endpoint: '/api/predictions' }, err);
           return new Response(null, { status: 503, statusText: 'Service Unavailable' });
         }),
-        fetch(`/api/accumulators${uidQuery}`, { headers }).catch(err => {
+        fetch(`/api/accumulators`, { headers }).catch(err => {
           logSyncError('FetchAccumulatorsEndpoint', { endpoint: '/api/accumulators' }, err);
           return new Response(null, { status: 503, statusText: 'Service Unavailable' });
         }),
-        fetch(`/api/articles${uidQuery}`, { headers }).catch(err => {
+        fetch(`/api/articles`, { headers }).catch(err => {
           logSyncError('FetchArticlesEndpoint', { endpoint: '/api/articles' }, err);
           return new Response(null, { status: 503, statusText: 'Service Unavailable' });
         }),
-        fetch(`/api/notifications${uidQuery}`, { headers }).catch(err => {
+        fetch(`/api/notifications`, { headers }).catch(err => {
           logSyncError('FetchNotificationsEndpoint', { endpoint: '/api/notifications' }, err);
           return new Response(null, { status: 503, statusText: 'Service Unavailable' });
         }),
-        fetch(`/api/stats${uidQuery}`, { headers }).catch(err => {
+        fetch(`/api/stats`, { headers }).catch(err => {
           logSyncError('FetchStatsEndpoint', { endpoint: '/api/stats' }, err);
           return new Response(null, { status: 503, statusText: 'Service Unavailable' });
         })
@@ -803,7 +706,7 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [user?.uid, userProfile?.paymentStatus, userProfile?.subscriptionStatus]);
+  }, [accessKeySession.isActive]);
 
   // Monitor streak milestones and trigger animations
   useEffect(() => {
@@ -815,109 +718,6 @@ export default function App() {
     }
     setLastBadgeLevel(currentBadge.level);
   }, [stats?.streak]);
-
-  // 3. Real Authentication Handlers
-  const handleEmailAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError('');
-    setAuthSuccess('');
-
-    if (!authEmail.trim() || !authEmail.includes('@')) {
-      setAuthError('Please enter a valid email address.');
-      return;
-    }
-
-    if (authMode === 'reset') {
-      setAuthLoading(true);
-      try {
-        await sendPasswordResetEmail(auth, authEmail.trim());
-        setAuthSuccess('Password reset link sent to your email! Please check your inbox.');
-      } catch (err: any) {
-        setAuthError(err?.message || 'Failed to send password reset email.');
-      } finally {
-        setAuthLoading(false);
-      }
-      return;
-    }
-
-    if (!authPassword || authPassword.length < 6) {
-      setAuthError('Password must be at least 6 characters.');
-      return;
-    }
-
-    setAuthLoading(true);
-    try {
-      if (authMode === 'signup') {
-        const userCred = await createUserWithEmailAndPassword(auth, authEmail.trim(), authPassword);
-        if (authDisplayName.trim()) {
-          try {
-            await updateProfile(userCred.user, { displayName: authDisplayName.trim() });
-          } catch (_) {}
-        }
-        setShowAuthModal(false);
-        setAuthPassword('');
-      } else {
-        await signInWithEmailAndPassword(auth, authEmail.trim(), authPassword);
-        setShowAuthModal(false);
-        setAuthPassword('');
-      }
-    } catch (err: any) {
-      let msg = err?.message || 'Authentication failed. Please check credentials.';
-      if (msg.includes('user-not-found') || msg.includes('wrong-password') || msg.includes('invalid-credential')) {
-        msg = 'Invalid email or password.';
-      } else if (msg.includes('email-already-in-use')) {
-        msg = 'An account with this email already exists. Please sign in instead.';
-      }
-      setAuthError(msg);
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleOAuthSignIn = async (providerName: 'google' | 'apple' | 'microsoft') => {
-    setAuthError('');
-    setAuthSuccess('');
-    setAuthLoading(true);
-    try {
-      if (providerName === 'google') {
-        await signInWithGoogle();
-      } else if (providerName === 'apple') {
-        await signInWithApple();
-      } else {
-        await signInWithMicrosoft();
-      }
-      setShowAuthModal(false);
-    } catch (err: any) {
-      console.warn(`${providerName} sign in notice:`, err);
-      let msg = err?.message || `Failed to sign in with ${providerName}.`;
-      if (err?.code === 'auth/popup-closed-by-user') {
-        msg = 'Sign in popup was closed. Please try again.';
-      } else if (err?.code === 'auth/cancelled-popup-request') {
-        msg = 'Sign in request cancelled.';
-      } else if (err?.code === 'auth/popup-blocked') {
-        msg = 'Sign-in popup was blocked by browser. Please allow popups for this site.';
-      }
-      setAuthError(msg);
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (_) {}
-    setUser(null);
-    setUserProfile(null);
-    localStorage.removeItem('rafiki_user_session');
-    setShowAuthModal(false);
-    setActiveTab('predictions');
-  };
-
-  // 4. Update local userProfile after subscription billing completes
-  const handlePaymentSuccess = (updatedProfile: UserProfile) => {
-    setUserProfile(updatedProfile);
-  };
 
   const handleSimulateWin = () => {
     if (!stats) return;
@@ -986,8 +786,8 @@ export default function App() {
   return (
     <div className={`min-h-screen ${theme === 'high-contrast' ? 'theme-high-contrast bg-slate-50 text-slate-900' : 'bg-black text-gray-100'} flex flex-col justify-between selection:bg-emerald-500 selection:text-black antialiased font-sans`}>
       
-      {/* HEADER SECTION - TWO COMPACT ROWS TO FIT IN FIRST SCREEN */}
-      <header className="bg-zinc-950/95 backdrop-blur-md border-b border-zinc-900 sticky top-0 z-40" id="app-header">
+      {/* HEADER SECTION - TWO COMPACT ROWS THAT SCROLL NATURALLY UPWARDS WITH CONTENT */}
+      <header className="bg-zinc-950/95 backdrop-blur-md border-b border-zinc-900 z-30 relative transition-all" id="app-header">
         <div className="max-w-7xl mx-auto px-3 sm:px-5 lg:px-8">
           
           {/* ROW 1: BRANDING & TWO-ROW TOP ACTION ICONS / AUTH */}
@@ -1002,7 +802,7 @@ export default function App() {
               >
                 <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-full ring-2 ring-emerald-500/40 shadow-[0_0_18px_-2px_rgba(16,185,129,0.5)] overflow-hidden group-hover:scale-105 transition-all bg-zinc-950 flex items-center justify-center shrink-0">
                   <img 
-                    src="/src/assets/images/rafiki_app_logo_1787728334689.jpg" 
+                    src={APP_LOGO} 
                     alt="Rafiki Predict Logo"
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover object-center"
@@ -1099,85 +899,49 @@ export default function App() {
                   <span className="text-[11px] font-semibold text-gray-200 hidden sm:inline">Community</span>
                 </button>
 
-                {/* Login / Register Buttons OR Profile Pill */}
-                {!user ? (
-                  <div className="flex items-center gap-1 sm:gap-1.5 ml-1" id="header-settings-auth-buttons">
+                {/* Accountless VIP Access Status & Streak Badge */}
+                <div className="flex items-center gap-1 sm:gap-1.5 ml-1" id="header-vip-access-status">
+                  {accessKeySession.isActive ? (
                     <button
-                      id="header-login-btn"
-                      onClick={() => {
-                        setAuthMode('signin');
-                        setShowAuthModal(true);
-                      }}
-                      className="flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 bg-zinc-900 hover:bg-zinc-800 text-gray-200 hover:text-white border border-zinc-700/80 hover:border-emerald-500/50 rounded-xl text-[11px] sm:text-xs font-semibold cursor-pointer transition-all shrink-0 shadow-sm"
-                      title="Log In to your Account"
+                      id="header-vip-active-btn"
+                      onClick={() => setActiveTab('subscription')}
+                      className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border border-emerald-500/50 rounded-xl text-[11px] sm:text-xs font-bold cursor-pointer transition-all shadow-[0_0_12px_-2px_rgba(16,185,129,0.3)] shrink-0"
+                      title={`VIP Key Active: ${accessKeySession.keyCode} (${accessKeySession.remainingDays} days remaining)`}
                     >
-                      <LogIn className="w-3 h-3 text-emerald-400" />
-                      <span>Log In</span>
+                      <Zap className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400" />
+                      <span className="hidden sm:inline">VIP Active:</span>
+                      <span className="font-mono text-white text-[10px] sm:text-[11px]">{accessKeySession.remainingDays > 0 ? `${accessKeySession.remainingDays}d left` : 'Active'}</span>
                     </button>
-
+                  ) : (
                     <button
-                      id="header-register-btn"
-                      onClick={() => {
-                        setAuthMode('signup');
-                        setShowAuthModal(true);
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-bold rounded-xl text-[11px] sm:text-xs cursor-pointer transition-all shadow-[0_0_12px_-2px_rgba(16,185,129,0.4)] shrink-0"
-                      title="Register Free Account"
+                      id="header-vip-upgrade-btn"
+                      onClick={() => setActiveTab('subscription')}
+                      className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-bold rounded-xl text-[11px] sm:text-xs cursor-pointer transition-all shadow-[0_0_12px_-2px_rgba(16,185,129,0.4)] shrink-0"
+                      title="Activate or Purchase VIP Access Key"
                     >
-                      <UserPlus className="w-3 h-3 text-black" />
-                      <span>Register</span>
+                      <Key className="w-3.5 h-3.5 text-black" />
+                      <span>{t.unlockVipAcca || "VIP Access"}</span>
                     </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1 sm:gap-1.5 ml-1">
-                    {/* User Profile Button */}
-                    <button
-                      id="header-profile-btn"
-                      onClick={() => setShowAccountModal(true)}
-                      className="flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1 bg-zinc-900/90 hover:bg-zinc-800 rounded-xl border border-zinc-800 hover:border-emerald-500/40 text-right cursor-pointer transition-all"
-                      title="Click to view Member Profile / Manage Account"
-                    >
-                      <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-[10px] sm:text-xs">
-                        {userProfile?.username?.charAt(0)?.toUpperCase() || user.displayName?.charAt(0)?.toUpperCase() || user.email?.charAt(0)?.toUpperCase() || 'U'}
-                      </div>
-                      <span className="text-[11px] sm:text-xs font-semibold text-white truncate max-w-[80px] sm:max-w-[110px]">
-                        {userProfile?.username || user.displayName || user.email?.split('@')[0] || 'Member'}
-                      </span>
-                      <span className={`text-[9px] font-mono px-1 py-0.2 rounded ${
-                        userProfile?.role === 'admin' ? 'bg-amber-500/20 text-amber-300 font-bold' : (userProfile?.subscriptionStatus === 'premium' ? 'bg-emerald-500/20 text-emerald-300 font-bold' : 'bg-zinc-800 text-gray-400')
-                      }`}>
-                        {userProfile?.role === 'admin' ? 'Admin' : (userProfile?.subscriptionStatus === 'premium' ? 'VIP' : 'Free')}
-                      </span>
-                    </button>
+                  )}
 
-                    {/* Streak Badge pill */}
-                    <button 
-                      onClick={() => setIsBadgesModalOpen(true)}
-                      className={`hidden sm:flex text-[9px] font-mono ${currentBadge.colorClass} font-bold items-center gap-1 px-2 py-1 rounded-xl border border-zinc-800 bg-zinc-900/80 cursor-pointer hover:scale-105 transition-all`}
-                      title={`${t.badgesTitle}: ${language === 'en' ? currentBadge.name : currentBadge.nameSw}`}
+                  {/* Streak Badge pill */}
+                  <button 
+                    onClick={() => setIsBadgesModalOpen(true)}
+                    className={`hidden sm:flex text-[9px] font-mono ${currentBadge.colorClass} font-bold items-center gap-1 px-2 py-1 rounded-xl border border-zinc-800 bg-zinc-900/80 cursor-pointer hover:scale-105 transition-all`}
+                    title={`${t.badgesTitle}: ${language === 'en' ? currentBadge.name : currentBadge.nameSw}`}
+                  >
+                    <motion.div
+                      animate={{ rotate: [0, 15, -15, 15, 0] }}
+                      transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
                     >
-                      <motion.div
-                        animate={{ rotate: [0, 15, -15, 15, 0] }}
-                        transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-                      >
-                        {renderBadgeIcon(currentBadge.iconName, "w-3 h-3")}
-                      </motion.div>
-                      <span>{stats?.streak || '5W'}</span>
-                    </button>
+                      {renderBadgeIcon(currentBadge.iconName, "w-3 h-3")}
+                    </motion.div>
+                    <span>{stats?.streak || '5W'}</span>
+                  </button>
+                </div>
 
-                    {/* Logout */}
-                    <button 
-                      onClick={handleLogout}
-                      className="p-1.5 sm:p-2 bg-zinc-900 hover:bg-zinc-800 text-gray-400 hover:text-white rounded-xl border border-zinc-800 cursor-pointer transition-colors"
-                      title="Sign Out"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-
-                {/* 1-Day Pass indicator if guest */}
-                {!user && guestPass && (
+                {/* 1-Day Pass indicator if guest pass active */}
+                {guestPass && (
                   <div 
                     className="hidden sm:flex items-center gap-1 px-2 py-1 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-400 text-[10px] font-mono font-bold"
                     title={`1-Day Pass active until ${new Date(guestPass.expiresAt).toLocaleTimeString()}`}
@@ -1365,19 +1129,19 @@ export default function App() {
                 <span>{t.unlockVipAcca}</span>
               </button>
 
-              {userProfile?.role === 'admin' && (
-                <button 
-                  onClick={() => setActiveTab('admin')}
-                  className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 border ${
-                    activeTab === 'admin' 
-                      ? 'bg-zinc-900 text-white border-zinc-700 shadow-sm' 
-                      : 'text-purple-400 border-purple-950 bg-purple-950/20 hover:bg-purple-950/40'
-                  }`}
-                >
-                  <Cpu className="w-3.5 h-3.5 text-purple-400" />
-                  <span>{t.adminCenter}</span>
-                </button>
-              )}
+              <button 
+                id="nav-tab-admin-dashboard"
+                onClick={handleAdminTabAccess}
+                className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 border cursor-pointer ${
+                  activeTab === 'admin' 
+                    ? 'bg-zinc-900 text-purple-300 border-purple-500/60 shadow-[0_0_12px_rgba(168,85,247,0.3)] font-bold' 
+                    : 'text-purple-400 border-purple-950/60 bg-purple-950/20 hover:bg-purple-950/40 hover:border-purple-800'
+                }`}
+                title="Admin Dashboard - Engine Controls & System HQ"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                <span>{t.adminDashboard || t.adminCenter}</span>
+              </button>
             </nav>
           </div>
 
@@ -1386,11 +1150,11 @@ export default function App() {
 
       {/* MOBILE MENU NAVIGATION */}
       {mobileMenuOpen && (
-        <div className="md:hidden bg-zinc-950 border-b border-zinc-900 p-4 space-y-2 text-xs font-semibold">
+        <div className="md:hidden bg-zinc-950 border-b border-zinc-900 p-4 space-y-2 text-xs font-semibold" id="mobile-menu-drawer">
           <div className="flex items-center gap-2.5 px-3 py-2 mb-2 bg-zinc-900/50 rounded-xl border border-zinc-850">
             <div className="w-8 h-8 rounded-full ring-1 ring-emerald-500/40 overflow-hidden bg-zinc-950 shrink-0">
               <img 
-                src="/src/assets/images/rafiki_app_logo_1787728334689.jpg" 
+                src={APP_LOGO} 
                 alt="Rafiki Predict Logo"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover"
@@ -1403,137 +1167,101 @@ export default function App() {
           </div>
 
           {[
-            { id: 'predictions', label: t.todaysPicks },
-            { id: 'archive', label: t.performanceLogs },
-            { id: 'articles', label: t.strategyGuides },
-            { id: 'quiz', label: `${t.dailyQuiz} ✨` },
-            { id: 'gmail', label: `📧 ${t.gmailInbox}` },
-            { id: 'responsible', label: t.stakingGuard },
-            { id: 'subscription', label: t.unlockVipAcca, premium: true }
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => {
-                setActiveTab(item.id as any);
-                setMobileMenuOpen(false);
-              }}
-              className={`w-full text-left px-4 py-3 rounded-xl block transition-all ${
-                activeTab === item.id 
-                  ? item.premium 
-                    ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/30'
-                    : 'bg-zinc-900 text-white' 
-                  : item.premium
-                  ? 'text-emerald-400'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
+            { id: 'predictions', label: t.todaysPicks, icon: '⚽' },
+            { id: 'archive', label: t.performanceLogs, icon: '📊' },
+            { id: 'articles', label: t.strategyGuides, icon: '📚' },
+            { id: 'quiz', label: t.dailyQuiz, iconComp: Sparkles, iconClass: 'text-emerald-400' },
+            { id: 'gmail', label: t.gmailInbox, iconComp: Mail, iconClass: 'text-red-400' },
+            { id: 'responsible', label: t.stakingGuard, iconComp: Shield, iconClass: 'text-emerald-400' },
+            { id: 'subscription', label: t.unlockVipAcca, iconComp: Coins, iconClass: 'text-amber-400', premium: true },
+            { id: 'admin', label: t.adminDashboard || t.adminCenter, iconComp: ShieldCheck, iconClass: 'text-purple-400', admin: true }
+          ].map((item) => {
+            const IconComp = item.iconComp;
+            return (
+              <button
+                key={item.id}
+                id={`mobile-nav-${item.id}`}
+                onClick={() => {
+                  if (item.id === 'admin') {
+                    handleAdminTabAccess();
+                  } else {
+                    setActiveTab(item.id as any);
+                  }
+                  setMobileMenuOpen(false);
+                }}
+                className={`w-full text-left px-4 py-3 rounded-xl flex items-center justify-between transition-all cursor-pointer ${
+                  activeTab === item.id 
+                    ? item.admin
+                      ? 'bg-purple-950/40 text-purple-300 border border-purple-600/50 shadow-sm font-bold'
+                      : item.premium 
+                      ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/30 font-bold'
+                      : 'bg-zinc-900 text-white font-bold' 
+                    : item.admin
+                    ? 'text-purple-400 hover:text-purple-300 bg-purple-950/20 hover:bg-purple-950/40 border border-purple-900/30'
+                    : item.premium
+                    ? 'text-emerald-400 hover:text-emerald-300 bg-emerald-950/20 hover:bg-emerald-950/30 border border-emerald-900/20'
+                    : 'text-gray-400 hover:text-white bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-850/50'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  {IconComp ? (
+                    <IconComp className={`w-4 h-4 ${item.iconClass || 'text-emerald-400'}`} />
+                  ) : (
+                    <span className="text-sm">{item.icon}</span>
+                  )}
+                  <span>{item.label}</span>
+                </div>
+                {item.admin && (
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    ADMIN HQ
+                  </span>
+                )}
+                {item.premium && (
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    VIP
+                  </span>
+                )}
+              </button>
+            );
+          })}
 
-          {userProfile?.role === 'admin' && (
-            <button
-              onClick={() => {
-                setActiveTab('admin');
-                setMobileMenuOpen(false);
-              }}
-              className="w-full text-left px-4 py-3 rounded-xl bg-purple-950/20 text-purple-400 border border-purple-900 block"
-            >
-              Admin Center
-            </button>
-          )}
-
-          {user ? (
-            <div className="border-t border-zinc-900 pt-3 mt-3 px-4 flex flex-col gap-2">
+          {/* Accountless VIP Access Mobile Box */}
+          <div className="border-t border-zinc-900 pt-3 mt-3 px-4 flex flex-col gap-2">
+            <div className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-xl space-y-2">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-gray-400">User:</span>
-                <span className="font-semibold text-white">{userProfile?.username || user.displayName || user.email || 'Member'}</span>
-              </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-gray-400">Status:</span>
-                <span className={`font-mono uppercase text-[10px] tracking-wider ${
-                  userProfile?.subscriptionStatus === 'premium' ? 'text-emerald-400 font-bold' : 'text-gray-500'
+                <span className="text-gray-400 font-medium">VIP Status:</span>
+                <span className={`font-mono font-bold text-xs uppercase tracking-wider ${
+                  accessKeySession.isActive ? 'text-emerald-400' : 'text-amber-400'
                 }`}>
-                  {userProfile?.subscriptionStatus === 'premium' ? t.premium : t.trialMode}
+                  {accessKeySession.isActive ? 'VIP KEY ACTIVE' : 'FREE GUEST'}
                 </span>
               </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-gray-400">{t.badgesTitle || 'Badge'}:</span>
-                <button 
-                  onClick={() => {
-                    setIsBadgesModalOpen(true);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`text-[10px] font-mono ${currentBadge.colorClass} font-bold flex items-center gap-1.5 px-2 py-0.5 rounded cursor-pointer hover:scale-105 active:scale-95 transition-all`}
-                  title={`${t.badgesTitle}: ${language === 'en' ? currentBadge.name : currentBadge.nameSw}`}
-                >
-                  <motion.div
-                    animate={{ rotate: [0, 15, -15, 15, 0] }}
-                    transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-                  >
-                    {renderBadgeIcon(currentBadge.iconName, "w-3 h-3")}
-                  </motion.div>
-                  <span>{stats?.streak || (language === 'en' ? '5 Wins' : 'Ushindi 5')}</span>
-                </button>
-              </div>
-              <div className="flex gap-2 mt-2">
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    setShowAccountModal(true);
-                  }}
-                  className="flex-1 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  <span>{language === 'en' ? 'My Account' : 'Akaunti Yangu'}</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    handleLogout();
-                  }}
-                  className="py-2 px-3 bg-zinc-900 text-red-400 border border-zinc-800 rounded-xl text-xs flex items-center justify-center gap-1.5 hover:bg-zinc-800 transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>{language === 'en' ? 'Sign Out' : 'Toka'}</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="border-t border-zinc-900 pt-3 mt-3 px-4 flex flex-col gap-2">
-              {guestPass && (
-                <div className="p-2 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-400 text-xs font-mono font-bold text-center">
-                  🎫 1-Day Guest Pass Active
+              {accessKeySession.isActive ? (
+                <div className="flex justify-between items-center text-[11px] font-mono text-gray-400">
+                  <span>Key Code:</span>
+                  <span className="text-white font-bold">{accessKeySession.keyCode?.slice(0, 14)}...</span>
                 </div>
-              )}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  id="mobile-login-btn"
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    setAuthMode('signin');
-                    setShowAuthModal(true);
-                  }}
-                  className="py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-1.5 border border-zinc-750"
-                >
-                  <LogIn className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Log In</span>
-                </button>
-                <button
-                  id="mobile-register-btn"
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    setAuthMode('signup');
-                    setShowAuthModal(true);
-                  }}
-                  className="py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>Register Free</span>
-                </button>
-              </div>
+              ) : null}
+              {accessKeySession.isActive && accessKeySession.remainingDays > 0 ? (
+                <div className="flex justify-between items-center text-[11px] font-mono text-emerald-400">
+                  <span>Validity:</span>
+                  <span>{accessKeySession.remainingDays} days remaining</span>
+                </div>
+              ) : null}
             </div>
-          )}
+
+            <button
+              id="mobile-manage-vip-btn"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                setActiveTab('subscription');
+              }}
+              className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>{accessKeySession.isActive ? 'Manage VIP Key / Plans' : '🔑 Activate VIP Key / Plans'}</span>
+            </button>
+          </div>
 
           {/* Mobile Menu Social Channels Row */}
           <div className="border-t border-zinc-900 pt-3 mt-3 px-2 flex items-center justify-between">
@@ -1785,6 +1513,35 @@ export default function App() {
           />
         )}
 
+        {/* Active Accountless VIP Access Key Banner */}
+        {accessKeySession.isActive && !userProfile && (
+          <div className="mb-6 bg-gradient-to-r from-emerald-950/70 via-slate-900 to-emerald-950/70 border border-emerald-500/40 p-3.5 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3 text-xs shadow-lg shadow-emerald-950/20 animate-fadeIn">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+              <span className="text-gray-300">
+                VIP Access Key: <code className="font-mono font-bold text-emerald-400 bg-slate-950 px-2 py-0.5 rounded border border-emerald-500/30">{accessKeySession.keyCode}</code>
+              </span>
+              <span className="text-gray-600 font-mono">|</span>
+              <span className="text-emerald-400 font-semibold">{accessKeySession.planName || 'VIP Pass'}</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-emerald-300 text-[11px] bg-slate-950/80 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                ⏱ {accessKeySession.remainingFormatted} remaining
+              </span>
+              <button
+                onClick={() => setActiveTab('subscription')}
+                className="text-xs text-slate-400 hover:text-white underline cursor-pointer"
+              >
+                Manage
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Quick User Subscription Status Indicator Ribbon */}
         {userProfile && (
           <div className="mb-6 bg-zinc-900/50 border border-zinc-850 p-3.5 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3 text-xs">
@@ -1882,18 +1639,7 @@ export default function App() {
 
             {activeTab === 'subscription' && (
               <SubscriptionTab 
-                user={user} 
-                userProfile={userProfile} 
-                onPaymentSuccess={handlePaymentSuccess} 
                 onGuestPassActivated={handleGuestPassActivated}
-                onRequestLogin={() => {
-                  setAuthMode('signin');
-                  setShowAuthModal(true);
-                }}
-                onRequestRegister={() => {
-                  setAuthMode('signup');
-                  setShowAuthModal(true);
-                }}
               />
             )}
 
@@ -1930,13 +1676,14 @@ export default function App() {
               />
             )}
 
-            {userProfile?.role === 'admin' && activeTab === 'admin' && (
+            {activeTab === 'admin' && (
               <AdminDashboard 
                 predictions={predictions} 
                 articles={articles} 
                 notifications={notifications} 
                 stats={stats} 
                 onRefreshData={fetchPlatformData} 
+                onLock={handleLockAdminSession}
               />
             )}
           </div>
@@ -1955,7 +1702,7 @@ export default function App() {
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full ring-2 ring-emerald-500/40 overflow-hidden bg-zinc-950 shrink-0 shadow-lg shadow-emerald-500/20">
                     <img 
-                      src="/src/assets/images/rafiki_app_logo_1787728334689.jpg" 
+                      src={APP_LOGO} 
                       alt="Rafiki Predict Logo"
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover"
@@ -2196,6 +1943,17 @@ export default function App() {
                   <Cookie className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                   <span>{t.cookieSettings}</span>
                 </button>
+
+                <button 
+                  onClick={() => {
+                    handleAdminTabAccess();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }} 
+                  className={`flex items-center gap-2 py-1 hover:underline text-left cursor-pointer transition-colors ${theme === 'high-contrast' ? 'text-purple-600 hover:text-purple-700 font-semibold' : 'text-purple-400 hover:text-purple-300 font-semibold'}`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                  <span>{t.adminDashboard || t.adminCenter}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -2297,49 +2055,22 @@ export default function App() {
         </div>
       </footer>
 
-      {/* AUTHENTICATION MODAL (Phone OTP, Email, Social Google/Apple/MS) */}
-      <AuthModal
-        isOpen={showAuthModal}
-        initialMode={authMode}
-        initialMethod="phone"
-        onClose={() => setShowAuthModal(false)}
-        onSuccess={(authUser, profile) => {
-          setUser(authUser);
-          if (profile) {
-            setUserProfile(profile);
-          }
-          setShowAuthModal(false);
-        }}
-        language={language}
-      />
-
-      {/* MEMBER PROFILE & ACCOUNT MANAGEMENT MODAL */}
-      <AccountModal
-        isOpen={showAccountModal}
-        onClose={() => setShowAccountModal(false)}
-        user={user}
-        userProfile={userProfile}
-        onProfileUpdated={(updated) => setUserProfile(updated)}
-        onSignOut={handleLogout}
-        language={language}
-      />
-
       {/* Floating Triggers Container */}
-      <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
+      <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 flex flex-col items-end gap-2.5 sm:gap-3">
         {/* Floating Customer Support AI Trigger Button */}
         <button
           onClick={() => setSupportOpen(true)}
-          className="relative group p-3.5 bg-blue-500 hover:bg-blue-400 text-black shadow-2xl rounded-full transition-all duration-300 transform hover:scale-110 active:scale-95 flex items-center justify-center cursor-pointer border border-blue-350"
+          className="relative group p-2.5 sm:p-3.5 bg-blue-500 hover:bg-blue-400 text-black shadow-2xl rounded-full transition-all duration-300 transform hover:scale-110 active:scale-95 flex items-center justify-center cursor-pointer border border-blue-350"
           title={language === 'en' ? 'AI Customer Support' : 'Msaada wa AI'}
         >
           <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500 border border-black"></span>
           </span>
-          <MessageSquare className="w-5 h-5 text-black fill-black/10" />
+          <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 text-black fill-black/10" />
           
           {/* Tooltip */}
-          <div className="absolute right-14 bg-zinc-950 border border-zinc-800 text-[11px] font-sans text-gray-200 px-3 py-1.5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none shadow-xl flex items-center gap-1.5">
+          <div className="absolute right-12 sm:right-14 bg-zinc-950 border border-zinc-800 text-[11px] font-sans text-gray-200 px-3 py-1.5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none shadow-xl flex items-center gap-1.5">
             <MessageSquare className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
             <span className="font-semibold">{language === 'en' ? 'AI Customer Support' : 'Huduma kwa Wateja (AI)'}</span>
           </div>
@@ -2348,17 +2079,17 @@ export default function App() {
         {/* Floating Betting Buddy Trigger Button */}
         <button
           onClick={() => setBuddyOpen(true)}
-          className="relative group p-3.5 bg-emerald-500 hover:bg-emerald-400 text-black shadow-2xl rounded-full transition-all duration-300 transform hover:scale-110 active:scale-95 flex items-center justify-center cursor-pointer border border-emerald-350"
+          className="relative group p-2.5 sm:p-3.5 bg-emerald-500 hover:bg-emerald-400 text-black shadow-2xl rounded-full transition-all duration-300 transform hover:scale-110 active:scale-95 flex items-center justify-center cursor-pointer border border-emerald-350"
           title={translations[language].bettingBuddy}
         >
           <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 border border-black"></span>
           </span>
-          <Sparkles className="w-5 h-5" />
+          <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
           
           {/* Tooltip */}
-          <div className="absolute right-14 bg-zinc-950 border border-zinc-800 text-[11px] font-sans text-gray-200 px-3 py-1.5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none shadow-xl flex items-center gap-1.5">
+          <div className="absolute right-12 sm:right-14 bg-zinc-950 border border-zinc-800 text-[11px] font-sans text-gray-200 px-3 py-1.5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none shadow-xl flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
             <span className="font-semibold">{translations[language].bettingBuddy}</span>
           </div>
@@ -2860,6 +2591,144 @@ export default function App() {
                 >
                   {language === 'en' ? 'Close Dialog' : 'Funga Dirisha'}
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ADMIN PASSWORD VERIFICATION MODAL */}
+      <AnimatePresence>
+        {adminAuthModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" id="admin-password-modal">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setAdminAuthModalOpen(false)}
+              className="absolute inset-0 bg-black/85 backdrop-blur-md" 
+            />
+            
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: "spring", duration: 0.4 }}
+              className="bg-zinc-900 border border-purple-500/50 rounded-3xl w-full max-w-md overflow-hidden shadow-[0_0_50px_rgba(168,85,247,0.25)] relative z-10 p-6 sm:p-7 flex flex-col space-y-5"
+            >
+              {/* Header */}
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-950 to-zinc-900 border border-purple-500/50 flex items-center justify-center text-purple-400 shadow-lg shadow-purple-950/60 shrink-0">
+                    <ShieldAlert className="w-6 h-6 text-purple-400 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[10px] font-mono font-bold tracking-wide mb-1">
+                      <Lock className="w-3 h-3" />
+                      SECURITY RESTRICTED
+                    </div>
+                    <h3 className="text-lg font-bold font-sans text-white">
+                      {t.adminModalTitle || 'Admin Security Verification'}
+                    </h3>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setAdminAuthModalOpen(false)}
+                  className="text-gray-400 hover:text-white text-xs bg-zinc-950 p-2 rounded-xl border border-zinc-800 hover:border-zinc-700 cursor-pointer transition-colors"
+                  title="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-300 leading-relaxed">
+                {t.adminModalDesc || 'Enter the administrator password to unlock the system management dashboard and operational controls.'}
+              </p>
+
+              {/* Verification Form */}
+              <form onSubmit={handleVerifyAdminPassword} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-gray-300 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-purple-400" />
+                      {t.adminPasswordLabel || 'Administrator Password'}
+                    </span>
+                    <span className="text-[10px] text-gray-500 font-mono">Restricted</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="admin-auth-passcode-input"
+                      name="admin_passcode_pin"
+                      type={showAdminAuthPassword ? 'text' : 'password'}
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-form-type="other"
+                      value={adminAuthPassword}
+                      onChange={(e) => {
+                        setAdminAuthPassword(e.target.value);
+                        setAdminAuthError('');
+                      }}
+                      placeholder={t.adminPasswordPlaceholder || 'Enter password (e.g. 27885861)'}
+                      autoFocus
+                      className="w-full bg-zinc-950 border border-zinc-750 focus:border-purple-500 rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500/20 pr-12 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminAuthPassword(!showAdminAuthPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 p-1 cursor-pointer"
+                      title={showAdminAuthPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showAdminAuthPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {adminAuthError && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-rose-950/70 border border-rose-500/60 text-rose-300 px-3.5 py-2.5 rounded-xl text-xs flex items-center gap-2"
+                  >
+                    <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{adminAuthError}</span>
+                  </motion.div>
+                )}
+
+                <div className="flex items-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setAdminAuthModalOpen(false)}
+                    className="w-1/3 bg-zinc-800 hover:bg-zinc-750 text-gray-300 font-semibold py-3 px-3 rounded-xl text-xs transition-colors cursor-pointer border border-zinc-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isAdminVerifying}
+                    className="w-2/3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30 cursor-pointer disabled:opacity-50"
+                  >
+                    {isAdminVerifying ? (
+                      <>
+                        <Activity className="w-4 h-4 animate-spin" />
+                        <span>Verifying...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>{t.verifyUnlockBtn || 'Verify & Access'}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+
+              <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-center gap-2 text-[11px] text-gray-500">
+                <KeyRound className="w-3.5 h-3.5 text-purple-400/80" />
+                <span>Session will persist until browser is closed or locked</span>
               </div>
             </motion.div>
           </div>

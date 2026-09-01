@@ -36,6 +36,14 @@ cp .env.example .env
 
 Open `.env` and fill in your keys:
 ```env
+# Client-Side Firebase Configuration
+VITE_FIREBASE_API_KEY=your_firebase_api_key_here
+VITE_FIREBASE_AUTH_DOMAIN=symmetric-silicon-r2t1j.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=symmetric-silicon-r2t1j
+VITE_FIREBASE_STORAGE_BUCKET=symmetric-silicon-r2t1j.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=354839059532
+VITE_FIREBASE_APP_ID=1:354839059532:web:c6a5bccb491a2104aca8e9
+
 # Server Port (Defaults to 3000)
 PORT=3000
 
@@ -44,23 +52,20 @@ GEMINI_API_KEY=your_gemini_api_key_here
 
 # Master Administrator Credentials
 ADMIN_EMAIL=rafikibc1000@gmail.com
-ADMIN_SECRET_KEY=your_admin_secret_key_here
+ADMIN_SECRET_KEY=your_admin_secret_password_here
 
 # (Optional) Live Sports Data API
 SPORTS_API_KEY=your_api_sports_key_here
 ```
 
-### 4. Firebase Configuration
-The frontend automatically connects using `firebase-applet-config.json`. Ensure this file is placed at the root of your project:
-```json
-{
-  "projectId": "your-firebase-project-id",
-  "appId": "your-firebase-app-id",
-  "apiKey": "your-firebase-api-key",
-  "authDomain": "your-project.firebaseapp.com",
-  "storageBucket": "your-project.firebasestorage.app"
-}
-```
+### 4. Firebase Security & Credential Setup
+The client-side Firebase SDK dynamically initializes using environment variables (`VITE_FIREBASE_*`).
+
+> **Security Notice**: Never commit raw API keys or credentials to Git. If an API key was previously committed to a public repository, follow these rotation steps:
+> 1. Go to the [Google Cloud Console Credentials](https://console.cloud.google.com/apis/credentials) or [Firebase Console](https://console.firebase.google.com/).
+> 2. Regenerate or restrict your Web API Key (HTTP referrer and API restrictions: Identity Toolkit, Cloud Firestore, etc.).
+> 3. Delete or revoke the compromised key.
+> 4. Add the new key into your `.env` file as `VITE_FIREBASE_API_KEY`.
 
 ---
 

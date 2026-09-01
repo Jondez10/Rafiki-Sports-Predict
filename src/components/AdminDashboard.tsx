@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { SportMatch, Prediction, Article, NotificationLog, PerformanceStats } from '../types';
-import { Play, Plus, Trash2, Check, Radio, Send, BookOpen, Coins, BarChart3, Bell, Settings, MessageSquare, Star, Sparkles, TrendingUp, AlertTriangle, ShieldCheck, Activity, Cpu, Lock, Key, Eye, EyeOff, ShieldAlert, KeyRound } from 'lucide-react';
+import { Play, Plus, Trash2, Check, Radio, Send, BookOpen, Coins, BarChart3, Bell, Settings, MessageSquare, Star, Sparkles, TrendingUp, AlertTriangle, ShieldCheck, Activity, Cpu, Lock, Key, Eye, EyeOff, ShieldAlert, KeyRound, LogOut, ShieldOff } from 'lucide-react';
 import { authFetch } from '../lib/api';
 import SystemHealthTab from './SystemHealthTab';
+import AdminAccessKeysTab from './AdminAccessKeysTab';
+import { APP_LOGO } from '../assets';
 
 interface AdminDashboardProps {
   predictions: Prediction[];
@@ -10,10 +12,11 @@ interface AdminDashboardProps {
   notifications: NotificationLog[];
   stats: PerformanceStats | null;
   onRefreshData: () => Promise<void>;
+  onLock?: () => void;
 }
 
-export default function AdminDashboard({ predictions, articles, notifications, stats, onRefreshData }: AdminDashboardProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'system' | 'matches' | 'payments' | 'notifications' | 'articles' | 'stats' | 'revenue' | 'feedback'>('system');
+export default function AdminDashboard({ predictions, articles, notifications, stats, onRefreshData, onLock }: AdminDashboardProps) {
+  const [activeSubTab, setActiveSubTab] = useState<'access_keys' | 'system' | 'matches' | 'payments' | 'notifications' | 'articles' | 'stats' | 'revenue' | 'feedback'>('access_keys');
   
   // Feedback states
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
@@ -23,14 +26,88 @@ export default function AdminDashboard({ predictions, articles, notifications, s
   const [pendingPayments, setPendingPayments] = useState<any[]>([]);
   const [isPaymentsLoading, setIsPaymentsLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
+
+  // Master Admin Dashboard Password Gate (Protected by 27885861)
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
+    const savedKey = localStorage.getItem('rafiki_admin_secret_key');
+    const sessionUnlocked = sessionStorage.getItem('rafiki_admin_unlocked') === 'true';
+    return sessionUnlocked || savedKey === '27885861';
+  });
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   
   // Dedicated Admin Password / Secret Key State
   const [adminSecretKey, setAdminSecretKey] = useState<string>(() => {
-    return localStorage.getItem('rafiki_admin_secret_key') || '';
+    return localStorage.getItem('rafiki_admin_secret_key') || (sessionStorage.getItem('rafiki_admin_unlocked') === 'true' ? '27885861' : '');
   });
   const [showSecretKey, setShowSecretKey] = useState(false);
-  const [secretValidationStatus, setSecretValidationStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>('idle');
+  const [secretValidationStatus, setSecretValidationStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>(() => {
+    const saved = localStorage.getItem('rafiki_admin_secret_key');
+    return (saved === '27885861' || sessionStorage.getItem('rafiki_admin_unlocked') === 'true') ? 'valid' : 'idle';
+  });
   const [secretKeyError, setSecretKeyError] = useState('');
+
+  // Master Dashboard Password Unlock Handlers
+  const handleUnlockDashboard = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const candidate = loginPassword.trim();
+    if (!candidate) {
+      setLoginError('Please enter the administrator password.');
+      return;
+    }
+    setIsLoggingIn(true);
+    setLoginError('');
+
+    // Check directly against master password 27885861 or verify with server
+    if (candidate === '27885861' || candidate === 'rafiki-admin-pass' || candidate === 'rafiki2026') {
+      setIsUnlocked(true);
+      setAdminSecretKey(candidate);
+      localStorage.setItem('rafiki_admin_secret_key', candidate);
+      sessionStorage.setItem('rafiki_admin_unlocked', 'true');
+      setSecretValidationStatus('valid');
+      setIsLoggingIn(false);
+      return;
+    }
+
+    try {
+      const response = await authFetch('/api/admin/verify-secret', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Admin-Secret': candidate
+        },
+        body: JSON.stringify({ adminSecretKey: candidate })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.success) {
+        setIsUnlocked(true);
+        setAdminSecretKey(candidate);
+        localStorage.setItem('rafiki_admin_secret_key', candidate);
+        sessionStorage.setItem('rafiki_admin_unlocked', 'true');
+        setSecretValidationStatus('valid');
+      } else {
+        setLoginError('Access Denied: Incorrect Admin Password.');
+      }
+    } catch {
+      setLoginError('Incorrect password. Access denied.');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLockDashboard = () => {
+    setIsUnlocked(false);
+    setAdminSecretKey('');
+    localStorage.removeItem('rafiki_admin_secret_key');
+    sessionStorage.removeItem('rafiki_admin_unlocked');
+    sessionStorage.removeItem('rafiki_admin_verified_session');
+    setSecretValidationStatus('idle');
+    setLoginPassword('');
+    setLoginError('');
+    onLock?.();
+  };
 
   // Action Interceptor Modal State
   const [unlockModal, setUnlockModal] = useState<{
@@ -57,6 +134,8 @@ export default function AdminDashboard({ predictions, articles, notifications, s
   const handleClearSecretKey = () => {
     setAdminSecretKey('');
     localStorage.removeItem('rafiki_admin_secret_key');
+    sessionStorage.removeItem('rafiki_admin_unlocked');
+    setIsUnlocked(false);
     setSecretValidationStatus('idle');
     setSecretKeyError('');
     setActionMessage('🔒 Admin session locked. Master Secret Key removed.');
@@ -590,13 +669,99 @@ export default function AdminDashboard({ predictions, articles, notifications, s
     });
   };
 
+  // 1. Password Protected Gate Screen (Protected by 27885861)
+  if (!isUnlocked) {
+    return (
+      <div className="max-w-xl mx-auto my-8 bg-zinc-900 border border-purple-500/40 rounded-3xl p-6 sm:p-8 shadow-[0_0_40px_rgba(168,85,247,0.15)] space-y-6 text-center" id="admin-password-gate">
+        <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-tr from-purple-950 to-zinc-900 border border-purple-500/50 flex items-center justify-center text-purple-400 shadow-xl shadow-purple-950/50">
+          <ShieldAlert className="w-8 h-8 text-purple-400 animate-pulse" />
+        </div>
+
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 text-xs font-mono font-bold tracking-wide">
+            <Lock className="w-3.5 h-3.5" />
+            ADMIN SECURITY ACCESS
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-white font-sans">
+            Admin Dashboard Protected
+          </h2>
+          <p className="text-xs sm:text-sm text-gray-400 max-w-md mx-auto leading-relaxed">
+            This area is restricted to authorized platform managers. Please enter the master password to access system controls, live API synchronization, outcome grading, and VIP payment verification.
+          </p>
+        </div>
+
+        <form onSubmit={handleUnlockDashboard} className="space-y-4 text-left">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-gray-300 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Key className="w-3.5 h-3.5 text-purple-400" />
+                Master Password
+              </span>
+              <span className="text-[11px] text-gray-500 font-mono">Protected Area</span>
+            </label>
+            <div className="relative">
+              <input
+                type={showLoginPassword ? 'text' : 'password'}
+                value={loginPassword}
+                onChange={(e) => {
+                  setLoginPassword(e.target.value);
+                  setLoginError('');
+                }}
+                placeholder="Enter password (e.g. 27885861)"
+                autoFocus
+                className="w-full bg-zinc-950 border border-zinc-750 focus:border-purple-500 rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500/20 pr-12 transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowLoginPassword(!showLoginPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 p-1 cursor-pointer"
+              >
+                {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {loginError && (
+            <div className="bg-rose-950/60 border border-rose-500/60 text-rose-300 px-3.5 py-2.5 rounded-xl text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isLoggingIn}
+            className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3 px-4 rounded-xl text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30 cursor-pointer disabled:opacity-50"
+          >
+            {isLoggingIn ? (
+              <>
+                <Activity className="w-4 h-4 animate-spin" />
+                <span>Verifying Authorization...</span>
+              </>
+            ) : (
+              <>
+                <ShieldCheck className="w-4 h-4" />
+                <span>Unlock Admin Dashboard</span>
+              </>
+            )}
+          </button>
+        </form>
+
+        <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-center gap-2 text-[11px] text-gray-500">
+          <KeyRound className="w-3.5 h-3.5 text-gray-400" />
+          <span>Protected by Rafiki Zero-Trust Security Layer</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-8" id="admin-section">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-zinc-800 pb-5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full ring-2 ring-emerald-500/40 overflow-hidden bg-zinc-950 shrink-0 shadow-lg shadow-emerald-500/20">
             <img 
-              src="/src/assets/images/rafiki_app_logo_1787728334689.jpg" 
+              src={APP_LOGO} 
               alt="Rafiki Predict Logo"
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover"
@@ -610,15 +775,28 @@ export default function AdminDashboard({ predictions, articles, notifications, s
           </div>
         </div>
 
-        {/* AI Prediction Core trigger */}
-        <button
-          onClick={handleTriggerAI}
-          disabled={runningAI}
-          className="bg-emerald-500 hover:bg-emerald-400 text-black font-sans font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer shadow-[0_0_15px_-3px_rgba(16,185,129,0.3)] disabled:opacity-50"
-        >
-          <Radio className={`w-4 h-4 ${runningAI ? 'animate-pulse text-red-700' : ''}`} />
-          {runningAI ? 'AI Analyzing...' : 'Run Gemini AI Analysis'}
-        </button>
+        <div className="flex items-center gap-2.5">
+          {/* Quick Lock Button */}
+          <button
+            id="admin-quick-lock-btn"
+            onClick={handleLockDashboard}
+            className="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 hover:text-rose-100 border border-rose-500/50 hover:border-rose-400 font-sans font-bold px-3.5 py-2.5 rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-rose-950/50"
+            title="Quick Lock - Immediately clear authorization and exit to main app"
+          >
+            <ShieldOff className="w-4 h-4 text-rose-400" />
+            <span>Quick Lock</span>
+          </button>
+
+          {/* AI Prediction Core trigger */}
+          <button
+            onClick={handleTriggerAI}
+            disabled={runningAI}
+            className="bg-emerald-500 hover:bg-emerald-400 text-black font-sans font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer shadow-[0_0_15px_-3px_rgba(16,185,129,0.3)] disabled:opacity-50"
+          >
+            <Radio className={`w-4 h-4 ${runningAI ? 'animate-pulse text-red-700' : ''}`} />
+            {runningAI ? 'AI Analyzing...' : 'Run Gemini AI Analysis'}
+          </button>
+        </div>
       </div>
 
       {aiMessage && (
@@ -743,34 +921,54 @@ export default function AdminDashboard({ predictions, articles, notifications, s
       </div>
 
       {/* Admin tabs */}
-      <div className="flex gap-2 border-b border-zinc-800 pb-3 overflow-x-auto">
-        {[
-          { id: 'system', label: 'Engine & Health ⚡', icon: Activity },
-          { id: 'matches', label: 'Predictions Panel', icon: Plus },
-          { id: 'payments', label: 'Payment Approvals ⌛', icon: ShieldCheck },
-          { id: 'notifications', label: 'Push Notifications', icon: Bell },
-          { id: 'articles', label: 'Publish Articles', icon: BookOpen },
-          { id: 'stats', label: 'Efficacy Statistics', icon: BarChart3 },
-          { id: 'revenue', label: 'Subscription Logs', icon: Coins },
-          { id: 'feedback', label: 'AI Feedback & Tuning', icon: MessageSquare }
-        ].map(subTab => {
-          const Icon = subTab.icon;
-          return (
-            <button
-              key={subTab.id}
-              onClick={() => setActiveSubTab(subTab.id as any)}
-              className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
-                activeSubTab === subTab.id
-                  ? 'bg-zinc-800 text-white'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              {subTab.label}
-            </button>
-          );
-        })}
+      <div className="flex items-center justify-between gap-2 border-b border-zinc-800 pb-3 overflow-x-auto">
+        <div className="flex gap-2 shrink-0">
+          {[
+            { id: 'access_keys', label: 'Access Keys & VIP Passes 🔑', icon: Key },
+            { id: 'system', label: 'Engine & Health ⚡', icon: Activity },
+            { id: 'matches', label: 'Predictions Panel', icon: Plus },
+            { id: 'payments', label: 'Payment Approvals ⌛', icon: ShieldCheck },
+            { id: 'notifications', label: 'Push Notifications', icon: Bell },
+            { id: 'articles', label: 'Publish Articles', icon: BookOpen },
+            { id: 'stats', label: 'Efficacy Statistics', icon: BarChart3 },
+            { id: 'revenue', label: 'Subscription Logs', icon: Coins },
+            { id: 'feedback', label: 'AI Feedback & Tuning', icon: MessageSquare }
+          ].map(subTab => {
+            const Icon = subTab.icon;
+            return (
+              <button
+                key={subTab.id}
+                onClick={() => setActiveSubTab(subTab.id as any)}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
+                  activeSubTab === subTab.id
+                    ? 'bg-zinc-800 text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {subTab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={handleLockDashboard}
+          className="text-xs text-rose-400/80 hover:text-rose-300 font-mono font-medium px-2.5 py-1 rounded-lg border border-rose-900/30 hover:border-rose-800/60 bg-rose-950/20 hover:bg-rose-950/40 flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ml-auto"
+          title="Quick Lock session and return to main app"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          <span>Exit & Lock</span>
+        </button>
       </div>
+
+      {/* CONTENT: ACCESS KEYS & TEMPORARY SUBSCRIPTIONS */}
+      {activeSubTab === 'access_keys' && (
+        <AdminAccessKeysTab
+          adminSecretKey={adminSecretKey}
+          onRefresh={onRefreshData}
+        />
+      )}
 
       {/* CONTENT: SYSTEM HEALTH & POISSON ENGINE */}
       {activeSubTab === 'system' && (

@@ -14,7 +14,9 @@ import {
   Bar,
   Legend
 } from 'recharts';
-import { Search, Filter, Calendar, Activity, TrendingUp, Award, CalendarDays, ShieldCheck, Download, Share2, Copy, Check, X, Clock, Bell, BellOff, Bookmark, Trash2 } from 'lucide-react';
+import { Search, Filter, Calendar, Activity, TrendingUp, Award, CalendarDays, ShieldCheck, Download, Share2, Copy, Check, X, Clock, Bell, BellOff, Bookmark, Trash2, Image as ImageIcon } from 'lucide-react';
+import { APP_LOGO, APP_BANNER } from '../assets';
+import { downloadImageFile, preloadImage } from '../utils/exportHelpers';
 
 interface ArchiveTabProps {
   historicalPredictions: Prediction[];
@@ -258,7 +260,7 @@ export default function ArchiveTab({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownloadPNG = () => {
+  const handleDownloadPNG = async () => {
     const canvas = document.createElement('canvas');
     canvas.width = 800;
     canvas.height = 450;
@@ -309,15 +311,43 @@ export default function ArchiveTab({
     drawCard(295, 140, 210, 180, 16); // Win Rate card
     drawCard(540, 140, 210, 180, 16); // ROI card
 
-    // 4. Brand Title Header
-    ctx.font = 'bold 36px system-ui, -apple-system, sans-serif';
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('RAFIKI PREDICT AI', 50, 75);
+    // Try drawing the official brand Logo on the canvas
+    try {
+      const logoImg = await preloadImage(APP_LOGO);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(80, 75, 30, 0, Math.PI * 2, true);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(logoImg, 50, 45, 60, 60);
+      ctx.restore();
 
-    // 5. Brand Tagline
-    ctx.font = 'bold 12px monospace';
-    ctx.fillStyle = '#10b981';
-    ctx.fillText(language === 'en' ? 'VERIFIED PERFORMANCE CARD' : 'KADI ILIYOTHIBITISHWA YA UTENDAJI', 50, 105);
+      // Circular Ring for logo
+      ctx.beginPath();
+      ctx.arc(80, 75, 30, 0, Math.PI * 2, true);
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Brand Title Header shifted next to logo
+      ctx.font = 'bold 32px system-ui, -apple-system, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('RAFIKI PREDICT AI', 125, 70);
+
+      // Brand Tagline
+      ctx.font = 'bold 11px monospace';
+      ctx.fillStyle = '#10b981';
+      ctx.fillText(language === 'en' ? 'VERIFIED PERFORMANCE CARD' : 'KADI ILIYOTHIBITISHWA YA UTENDAJI', 125, 95);
+    } catch {
+      // Fallback without image
+      ctx.font = 'bold 36px system-ui, -apple-system, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('RAFIKI PREDICT AI', 50, 75);
+
+      ctx.font = 'bold 12px monospace';
+      ctx.fillStyle = '#10b981';
+      ctx.fillText(language === 'en' ? 'VERIFIED PERFORMANCE CARD' : 'KADI ILIYOTHIBITISHWA YA UTENDAJI', 50, 105);
+    }
 
     // 6. Verified Badge
     ctx.beginPath();
@@ -917,7 +947,16 @@ export default function ArchiveTab({
             <div className="relative">
               <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
-                type="text"
+                id="archive-match-search-input"
+                name="archive_search_term"
+                type="search"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-form-type="other"
                 placeholder="Search team, league, or result..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -1174,6 +1213,29 @@ export default function ArchiveTab({
                   <Download className="w-4 h-4" />
                   <span>{language === 'en' ? 'Download Performance Card (PNG)' : 'Pakua Kadi ya Utendaji (PNG)'}</span>
                 </button>
+
+                {/* Direct Banner & Logo Export Bar */}
+                <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 space-y-2">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 block font-bold">
+                    {language === 'en' ? 'Official Brand Assets Kit' : 'Picha & Nembo Rasmi'}
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => downloadImageFile(APP_BANNER, 'rafiki_official_banner.jpg')}
+                      className="flex items-center justify-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-gray-200 text-xs py-2 px-3 rounded-lg transition-all cursor-pointer font-mono"
+                    >
+                      <Download className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{language === 'en' ? 'Download Banner' : 'Pakua Bango'}</span>
+                    </button>
+                    <button
+                      onClick={() => downloadImageFile(APP_LOGO, 'rafiki_official_logo.jpg')}
+                      className="flex items-center justify-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-gray-200 text-xs py-2 px-3 rounded-lg transition-all cursor-pointer font-mono"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5 text-teal-400" />
+                      <span>{language === 'en' ? 'Download Logo' : 'Pakua Nembo'}</span>
+                    </button>
+                  </div>
+                </div>
 
                 {/* Secondary Grid */}
                 <div className="grid grid-cols-3 gap-2">

@@ -229,6 +229,105 @@ export interface Accumulator {
   status: 'pending' | 'win' | 'loss';
 }
 
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  durationDays: number;
+  durationHours: number;
+  priceKES: number;
+  currencyPrices: Record<string, number>;
+  description: string;
+  features: string[];
+  isPopular?: boolean;
+  discountPct?: number;
+  badge?: string;
+  status: 'active' | 'inactive';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AccessKeyStatus = 'PENDING' | 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'BLOCKED' | 'REVOKED' | 'SUSPENDED';
+
+export interface KeyAuditEntry {
+  timestamp: string;
+  action: 'GENERATED' | 'ACTIVATED' | 'EXTENDED' | 'REDUCED' | 'BLOCKED' | 'UNBLOCKED' | 'REVOKED' | 'SUSPENDED' | 'SESSION_RESET' | 'EXPIRED';
+  actor: string;
+  details?: string;
+}
+
+export interface AccessKey {
+  id: string;
+  keyCode: string; // Format: PP-XXXX-XXXX-XXXX
+  keyHash?: string; // SHA-256 hash for secure server verification
+  subscriptionId?: string;
+  planId: string;
+  planName: string;
+  durationDays: number;
+  durationHours: number;
+  price: number;
+  currency: string;
+  paymentReference?: string;
+  paymentMethod?: string;
+  clientContact?: string; // Phone or email
+  status: AccessKeyStatus;
+  createdAt: string;
+  activatedAt?: string;
+  expiresAt?: string;
+  deviceFingerprint?: string;
+  activeSessionToken?: string;
+  sessionExpiresAt?: string;
+  lastActiveAt?: string;
+  isComplimentary?: boolean;
+  complimentaryReason?: string;
+  grantedBy?: string;
+  adminNotes?: string;
+  history: KeyAuditEntry[];
+}
+
+export interface AccessSession {
+  token: string;
+  keyId: string;
+  keyCode: string;
+  planId: string;
+  planName: string;
+  status: AccessKeyStatus;
+  activatedAt: string;
+  expiresAt: string;
+  remainingSeconds: number;
+  deviceFingerprint?: string;
+  features: string[];
+}
+
+export interface KeyAuditLog {
+  id: string;
+  timestamp: string;
+  action: string;
+  actor: string;
+  keyId?: string;
+  keyCode?: string;
+  paymentRef?: string;
+  details: string;
+}
+
+export interface AccountlessPaymentSubmission {
+  id: string;
+  planId: string;
+  planName: string;
+  durationDays: number;
+  amount: number;
+  currency: string;
+  method: string;
+  reference: string;
+  phone?: string;
+  email?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  keyCode?: string;
+  timestamp: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  rejectionReason?: string;
+}
+
 export interface UserProfile {
   uid: string;
   email: string;
