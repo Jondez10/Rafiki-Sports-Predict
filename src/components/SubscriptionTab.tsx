@@ -659,10 +659,14 @@ export default function SubscriptionTab({}: SubscriptionTabProps) {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                     <div className="bg-slate-900 p-3 rounded-lg border border-slate-800">
                       <div className="text-[11px] text-slate-400">Buy Goods Till No:</div>
-                      <div className="text-lg font-mono font-black text-emerald-400 tracking-wider">898989</div>
+                      <div className="text-lg font-mono font-black text-emerald-400 tracking-wider">6881472</div>
+                    </div>
+                    <div className="bg-slate-900 p-3 rounded-lg border border-slate-800">
+                      <div className="text-[11px] text-slate-400">Till Name:</div>
+                      <div className="text-sm font-mono font-bold text-emerald-300 truncate mt-1">John Mushira</div>
                     </div>
                     <div className="bg-slate-900 p-3 rounded-lg border border-slate-800">
                       <div className="text-[11px] text-slate-400">Amount to Pay:</div>
@@ -672,11 +676,44 @@ export default function SubscriptionTab({}: SubscriptionTabProps) {
 
                   <ol className="text-xs text-slate-300 space-y-1.5 list-decimal list-inside pt-1 leading-relaxed">
                     <li>Open M-Pesa &gt; <strong>Lipa na M-Pesa</strong> &gt; <strong>Buy Goods and Services</strong></li>
-                    <li>Enter Till Number: <strong className="text-emerald-400 font-mono">898989</strong> (Rafiki Predict)</li>
+                    <li>Enter Till Number: <strong className="text-emerald-400 font-mono">6881472</strong> (Till Name: <strong className="text-white font-medium">John Mushira</strong>)</li>
                     <li>Enter Amount: <strong className="text-white font-mono">{formatPrice(checkoutPlan)}</strong></li>
                     <li>Enter PIN and complete payment</li>
                     <li>Copy the 10-character confirmation code (e.g., <span className="text-slate-400 font-mono">SDF78912KL</span>)</li>
                   </ol>
+                </div>
+
+                {/* Additional Payment Methods Breakdown */}
+                <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4 space-y-2.5 text-xs">
+                  <span className="font-bold text-slate-200 block text-[11px] uppercase tracking-wider font-mono">
+                    All Verified Payment Channels
+                  </span>
+                  <div className="space-y-1.5 text-slate-300 font-mono text-[11px]">
+                    <div className="flex justify-between border-b border-slate-900 pb-1">
+                      <span className="text-slate-400">M-Pesa Send Money:</span>
+                      <span className="text-emerald-400 font-bold">0716483642 (+254716483642)</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-900 pb-1">
+                      <span className="text-slate-400">Airtel Money:</span>
+                      <span className="text-emerald-400 font-bold">0735309361 (+254735309361)</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-900 pb-1">
+                      <span className="text-slate-400">Telkom (T-Kash):</span>
+                      <span className="text-emerald-400 font-bold">0773266691 (+254773266691)</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-900 pb-1">
+                      <span className="text-slate-400">Online (Payoneer / Pesapal / Skrill):</span>
+                      <span className="text-emerald-400 font-bold">johnmushira@gmail.com</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-900 pb-1">
+                      <span className="text-slate-400">Equity Bank Transfer:</span>
+                      <span className="text-emerald-400 font-bold">0620187419406</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Visa Card:</span>
+                      <span className="text-emerald-400 font-bold">4478150001579885</span>
+                    </div>
+                  </div>
                 </div>
 
                 {/* WhatsApp Support Direct Contact */}

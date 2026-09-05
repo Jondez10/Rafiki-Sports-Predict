@@ -1,120 +1,154 @@
 # Rafiki Predict ⚽🤖
 
-AI-Powered Football Prediction & Analytical Engine built with React, Vite, Express, TypeScript, and Google Gemini API.
+AI-Powered Football Prediction & Analytical Engine built with React, Vite, Express, TypeScript, Google Gemini API, and Multi-Model Ensemble Intelligence.
 
 ---
 
-## 🌟 Features
+## 🌟 1. Overview & Architecture
 
-- **Mathematical & Poisson Predictive Engine**: Poisson distribution, Elo ratings, xG metrics, and momentum modeling for verified fixtures.
-- **Gemini AI Grounding & Analysis**: Real-time sports intelligence with Gemini Flash / Pro integration.
-- **Firebase Firestore & Authentication**: Real-time bookmarking, user profiles, subscription tracking, and robust offline cache synchronization with jittered exponential backoff.
-- **Admin Command & Health Dashboard**: Live sports API fixture sync, automated grading, ensemble diagnostics, and system monitoring.
-- **Multi-language Support**: English and Swahili localization.
-
----
-
-## 🚀 Quick Start Guide
-
-### 1. Prerequisites
-- **Node.js**: v18.0.0 or higher
-- **npm** or **bun**
-
-### 2. Installation
-Clone the repository and install dependencies:
-```bash
-git clone <your-repo-url>
-cd <repo-folder>
-npm install
-```
-
-### 3. Environment Configuration
-Copy the example environment file:
-```bash
-cp .env.example .env
-```
-
-Open `.env` and fill in your keys:
-```env
-# Client-Side Firebase Configuration
-VITE_FIREBASE_API_KEY=your_firebase_api_key_here
-VITE_FIREBASE_AUTH_DOMAIN=symmetric-silicon-r2t1j.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=symmetric-silicon-r2t1j
-VITE_FIREBASE_STORAGE_BUCKET=symmetric-silicon-r2t1j.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=354839059532
-VITE_FIREBASE_APP_ID=1:354839059532:web:c6a5bccb491a2104aca8e9
-
-# Server Port (Defaults to 3000)
-PORT=3000
-
-# Google Gemini API Key (Required for AI Analysis & Betting Buddy)
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# Master Administrator Credentials
-ADMIN_EMAIL=rafikibc1000@gmail.com
-ADMIN_SECRET_KEY=your_admin_secret_password_here
-
-# (Optional) Live Sports Data API
-SPORTS_API_KEY=your_api_sports_key_here
-```
-
-### 4. Firebase Security & Credential Setup
-The client-side Firebase SDK dynamically initializes using environment variables (`VITE_FIREBASE_*`).
-
-> **Security Notice**: Never commit raw API keys or credentials to Git. If an API key was previously committed to a public repository, follow these rotation steps:
-> 1. Go to the [Google Cloud Console Credentials](https://console.cloud.google.com/apis/credentials) or [Firebase Console](https://console.firebase.google.com/).
-> 2. Regenerate or restrict your Web API Key (HTTP referrer and API restrictions: Identity Toolkit, Cloud Firestore, etc.).
-> 3. Delete or revoke the compromised key.
-> 4. Add the new key into your `.env` file as `VITE_FIREBASE_API_KEY`.
+**Rafiki Predict** is a full-stack, enterprise-grade sports intelligence platform. It features:
+- **Poisson & xG Distribution Engine**: Computes exact goal distribution PMF, Over/Under (1.5, 2.5, 3.5), Both Teams to Score (BTTS), Match Winner (1X2), and Double Chance probabilities.
+- **Multi-Model Ensemble Machine Learning**: Aggregates Weighted Poisson Regression (35%), Elo Bayesian Rating (25%), Expected Goals xG (20%), and Momentum/Fatigue Indices (20%).
+- **Gemini AI Grounding & Analysis**: Server-side Google Gemini 3.7 Flash analysis for in-depth tactical previews, real-time sports intelligence, and interactive Betting Buddy Q&A.
+- **Accountless Temporary VIP Access Engine**: Instant cryptographic access keys with time-based leases (1 Day, 7 Days, 30 Days), multi-currency pricing (KES, USD, EUR, GBP, NGN, GHS, ZAR, UGX, TZS), device binding, and administrative lifecycle management.
+- **Administrative Control Center**: Live fixture sync, automated grading, manual settlement overrides, ensemble diagnostics, and system health telemetry.
+- **Firebase Firestore & Authentication**: Real-time bookmarking, user profiles, subscription tracking, and resilient offline cache synchronization.
 
 ---
 
-## 🛠️ Available Scripts
+## 🛠️ 2. Technology Stack
+
+- **Frontend**: React 19, TypeScript, Tailwind CSS v4, Motion (Framer Motion), Lucide React, Recharts.
+- **Backend**: Node.js, Express, tsx, esbuild, Firebase Admin SDK.
+- **AI & Analytics**: Google GenAI SDK (`@google/genai`), Poisson PMF distribution, Elo Bayesian rating system.
+- **Database & Auth**: Firebase Firestore, Firebase Authentication (Google, Apple, Microsoft, Email/Password, Phone OTP, Username/Password).
+- **Tooling & Build**: Vite v6, TypeScript 5.8, ESLint.
+
+---
+
+## 🚀 3. Installation & Quick Start
+
+### Prerequisites
+- **Node.js**: `v18.0.0` or higher (Recommended: `v20.x` or `v22.x`)
+- **npm** (or **bun** / **yarn**)
+
+### Step-by-Step Setup
+1. **Clone the repository**:
+   ```bash
+   git clone <your-github-repo-url>
+   cd <repo-folder>
+   ```
+
+2. **Install all dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Configure environment variables**:
+   ```bash
+   cp .env.example .env
+   ```
+
+4. **Start development server**:
+   ```bash
+   npm run dev
+   ```
+   Open `http://localhost:3000` in your browser.
+
+---
+
+## 🔐 4. Environment Variables Reference
+
+Configure these in your `.env` file for local development or in your production container environment:
+
+| Variable | Scope | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `PORT` | Server | Optional | Port the Express server listens on (defaults to `3000`) |
+| `GEMINI_API_KEY` | Server | Recommended | Google Gemini API Key for AI predictions & Betting Buddy |
+| `ADMIN_EMAIL` | Server | Optional | Master administrator contact email |
+| `ADMIN_WHATSAPP` | Server | Optional | WhatsApp customer support number |
+| `ADMIN_SECRET_KEY` | Server | Recommended | Master password for administrative actions & VIP approvals |
+| `SPORTS_API_KEY` | Server | Optional | API-Football / RapidAPI key for real-time live fixture feeds |
+| `FIREBASE_PROJECT_ID` | Server/Client | Recommended | Google Firebase project ID |
+| `VITE_FIREBASE_API_KEY` | Client | Recommended | Firebase Web API key for authentication and Firestore sync |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Client | Optional | Firebase authentication domain |
+| `VITE_FIREBASE_PROJECT_ID` | Client | Optional | Firebase project ID exposed to Vite frontend |
+| `VITE_FIREBASE_STORAGE_BUCKET`| Client | Optional | Firebase storage bucket |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Client | Optional | Firebase Cloud Messaging sender ID |
+| `VITE_FIREBASE_APP_ID` | Client | Optional | Firebase Web Application ID |
+
+---
+
+## 📜 5. Available Scripts
 
 | Command | Description |
 | :--- | :--- |
-| `npm run dev` | Starts the Express + Vite full-stack server in development mode |
-| `npm run build` | Builds the Vite frontend and bundles the Express backend (`dist/server.cjs`) |
-| `npm start` | Runs the production bundled backend (`dist/server.cjs`) |
-| `npm run lint` | Runs TypeScript compiler checks (`tsc --noEmit`) |
-| `npm run test:math` | Executes the 13 mathematical defensive safety diagnostics |
+| `npm run dev` | Boots the full-stack dev server (`tsx server.ts`) on port 3000 |
+| `npm run build` | Compiles Vite frontend assets (`dist/`) and bundles backend (`dist/server.cjs`) |
+| `npm start` | Runs the compiled standalone production server (`node dist/server.cjs`) |
+| `npm run lint` | Performs strict TypeScript type checks across the codebase (`tsc --noEmit`) |
+| `npm run test:math` | Executes all 13 defensive mathematical algorithms safety tests |
+| `npm run clean` | Cleans `dist/` and build artifacts |
 
 ---
 
-## 🏗️ Project Structure
+## 🚢 6. Production Build & Deployment
 
-```
-├── firebase-applet-config.json   # Client Firebase credentials
-├── firestore.rules               # Firestore security rules
-├── metadata.json                 # AI Studio App metadata
-├── package.json                  # Dependencies & scripts
-├── server.ts                     # Full-Stack Express Server & API Routes
-├── src/
-│   ├── App.tsx                   # Main React Application
-│   ├── components/               # UI & Tab Components
-│   │   ├── AdminDashboard.tsx    # Admin Control Panel
-│   │   ├── PredictionsTab.tsx    # Fixtures & Predictions Feed
-│   │   ├── SystemHealthTab.tsx   # Diagnostics & Sync Logs
-│   │   └── ...
-│   ├── lib/
-│   │   ├── api.ts                # Authenticated API Client
-│   │   └── firebase.ts           # Firebase SDK & Resilient Retry Engine
-│   └── server/                   # Backend Algorithms
-│       ├── apiFootball.ts        # API-Football Integrations
-│       ├── ensembleEngine.ts     # Ensemble Model Weighted Aggregation
-│       ├── gemini.ts             # Google Gemini AI Integrations
-│       ├── liveSportsEngine.ts   # Real-Time Match Registry
-│       ├── mathDiagnostics.ts    # Mathematical Tests
-│       └── poissonEngine.ts      # Poisson PMF / Elo / xG Algorithms
-```
-
----
-
-## 🔒 Deployment & Production
-
-To run in production containers (Cloud Run, Docker, VPS):
+### Building for Production
 ```bash
 npm run build
+```
+This produces:
+- `dist/index.html` and bundled client assets.
+- `dist/server.cjs` self-contained backend bundle.
+
+### Running in Production
+```bash
 npm start
 ```
-The server will bind to `0.0.0.0:3000` and serve both API endpoints and the compiled single-page frontend.
+
+### Docker / Cloud Run Container Deployment
+The application is designed to run in containerized environments (Google Cloud Run, AWS ECS, Railway, Render, VPS):
+- Set container environment variable `NODE_ENV=production`.
+- The container binds to `0.0.0.0:3000`.
+- Health check endpoint available at `GET /api/health`.
+
+---
+
+## ⚽ 7. Sports API Configuration
+
+The application operates with a multi-layered sports data pipeline:
+1. **API-Football (Direct API)**: Set `SPORTS_API_KEY` to pull live fixtures directly from API-Sports.
+2. **Sports Consensus Engine**: Built-in fallback engine providing verified active schedules, live odds calculations, and dynamic fixture generation.
+3. **Automated Odds Calculation**: Decimal odds are derived using true Poisson PMF with 4–8% standard bookmaker vigorish.
+
+---
+
+## 🔥 8. Firebase & Firestore Rules
+
+Firestore security rules are defined in `firestore.rules`:
+- **User Collections**: Read/write restricted to authenticated owner.
+- **Predictions & Accumulators**: Publicly readable, writable only via server-side Admin SDK.
+- **Admin Collections**: Denied all direct client access; accessed strictly through authenticated backend routes.
+
+Deploy rules via Firebase CLI:
+```bash
+firebase deploy --only firestore:rules
+```
+
+---
+
+## 🛡️ 9. Important Security Requirements
+
+1. **Client/Server Secret Separation**: All sensitive API keys (`GEMINI_API_KEY`, `ADMIN_SECRET_KEY`, `FIREBASE_SERVICE_ACCOUNT_KEY`) are kept exclusively on the server and are NEVER exposed to the browser client.
+2. **Admin Authorization**: All administrative endpoints (`/api/admin/*`, `/api/predictions/generate-ai`, etc.) enforce server-side validation against `ADMIN_SECRET_KEY` and Firebase Admin claims.
+3. **Masked VIP Content**: AI predictions, probability indicators, momentum graphs, and value picks are strictly masked on the client until payment/access key verification is confirmed.
+4. **Git Hygiene**: `.gitignore` ensures that `.env` files, build caches, and private tokens are never committed to version control.
+
+---
+
+## 📄 10. License & Support
+
+- **Support Email**: `rafikibc1000@gmail.com`
+- **WhatsApp Support**: `+254716483642`
+- **Copyright**: © 2026 Rafiki Predict. All rights reserved.

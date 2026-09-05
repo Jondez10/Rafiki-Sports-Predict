@@ -1214,29 +1214,6 @@ export default function ArchiveTab({
                   <span>{language === 'en' ? 'Download Performance Card (PNG)' : 'Pakua Kadi ya Utendaji (PNG)'}</span>
                 </button>
 
-                {/* Direct Banner & Logo Export Bar */}
-                <div className="bg-zinc-950 p-3 rounded-xl border border-zinc-800 space-y-2">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-gray-400 block font-bold">
-                    {language === 'en' ? 'Official Brand Assets Kit' : 'Picha & Nembo Rasmi'}
-                  </span>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => downloadImageFile(APP_BANNER, 'rafiki_official_banner.jpg')}
-                      className="flex items-center justify-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-gray-200 text-xs py-2 px-3 rounded-lg transition-all cursor-pointer font-mono"
-                    >
-                      <Download className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>{language === 'en' ? 'Download Banner' : 'Pakua Bango'}</span>
-                    </button>
-                    <button
-                      onClick={() => downloadImageFile(APP_LOGO, 'rafiki_official_logo.jpg')}
-                      className="flex items-center justify-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-gray-200 text-xs py-2 px-3 rounded-lg transition-all cursor-pointer font-mono"
-                    >
-                      <ImageIcon className="w-3.5 h-3.5 text-teal-400" />
-                      <span>{language === 'en' ? 'Download Logo' : 'Pakua Nembo'}</span>
-                    </button>
-                  </div>
-                </div>
-
                 {/* Secondary Grid */}
                 <div className="grid grid-cols-3 gap-2">
                   

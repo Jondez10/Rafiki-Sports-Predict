@@ -1,8 +1,10 @@
 import express from 'express';
+import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
+import compression from 'compression';
 import { createServer as createViteServer } from 'vite';
 import { getApps, initializeApp, cert } from 'firebase-admin/app';
 import { getAuth, DecodedIdToken } from 'firebase-admin/auth';
@@ -94,6 +96,9 @@ const app = express();
 const PORT = 3000;
 
 // Middleware
+app.use(compression({
+  threshold: 512,
+}));
 app.use(express.json());
 
 // Firebase configuration
@@ -234,9 +239,9 @@ seedDatabaseIfEmpty();
 initAccessKeyEngine(db);
 
 // Environment Configurable Administrator Details
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'rafikibc1000@gmail.com';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'rafikibc10000@gmail.com';
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP || '0716483642';
-const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY || '27885861';
+const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY || 'Liluma@10.';
 
 /**
  * Validate Master Admin Secret Key for critical payment verification & VIP activation
@@ -245,6 +250,7 @@ function verifyAdminSecretKey(req: express.Request): boolean {
   const candidate = (
     req.body?.adminSecretKey ||
     req.body?.adminPassword ||
+    req.body?.password ||
     req.headers['x-admin-secret'] ||
     req.headers['x-admin-key'] ||
     req.headers['x-admin-password']
@@ -254,6 +260,7 @@ function verifyAdminSecretKey(req: express.Request): boolean {
 
   const validKeys = new Set([
     ADMIN_SECRET_KEY,
+    'Liluma@10.',
     '27885861',
     'rafiki-admin-pass',
     'rafiki2026',
@@ -350,7 +357,11 @@ async function requireAdmin(req: express.Request, res: express.Response, next: e
     req.user = decodedToken;
 
     const email = (decodedToken.email || '').toLowerCase();
-    const isMasterAdminEmail = email === 'johnmushira@gmail.com' || email === ADMIN_EMAIL.toLowerCase();
+    const isMasterAdminEmail = 
+      email === 'rafikibc10000@gmail.com' ||
+      email === 'rafikibc1000@gmail.com' ||
+      email === 'johnmushira@gmail.com' || 
+      email === ADMIN_EMAIL.toLowerCase();
     const hasAdminClaim = decodedToken.admin === true || decodedToken.role === 'admin';
 
     // Also check Firestore user profile as supplementary check if needed
@@ -1031,7 +1042,11 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    service: 'Rafiki Predict API'
+    service: 'Rafiki Predict API',
+    uptime: Math.floor(process.uptime()),
+    version: '2.5.0',
+    environment: process.env.NODE_ENV || 'development',
+    hmrEnabled: process.env.DISABLE_HMR !== 'true'
   });
 });
 
@@ -1039,6 +1054,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api/predictions', async (req, res) => {
   try {
     const liveData = await getVerifiedLiveSportsData();
+    res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
     res.json(liveData.predictions);
   } catch (err: any) {
     console.warn("Failed to fetch verified predictions from live sports engine:", err?.message || err);
@@ -1050,6 +1066,7 @@ app.get('/api/predictions', async (req, res) => {
 app.get('/api/accumulators', async (req, res) => {
   try {
     const liveData = await getVerifiedLiveSportsData();
+    res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
     res.json(liveData.accumulators);
   } catch (err: any) {
     console.warn("Failed to fetch verified accumulators from live sports engine:", err?.message || err);
@@ -1061,6 +1078,7 @@ app.get('/api/accumulators', async (req, res) => {
 app.get('/api/matches', async (req, res) => {
   try {
     const liveData = await getVerifiedLiveSportsData();
+    res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
     res.json(liveData.matches);
   } catch (err: any) {
     console.warn("Failed to fetch verified matches from live sports engine:", err?.message || err);
@@ -1092,6 +1110,7 @@ app.post('/api/sports/refresh', async (req, res) => {
 // 4. Fetch articles (Public strategy articles with fallback)
 app.get('/api/articles', async (req, res) => {
   try {
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     const snapshot = await db.collection('articles').get();
     const articles: any[] = [];
     snapshot.forEach(docSnap => {
@@ -1103,6 +1122,7 @@ app.get('/api/articles', async (req, res) => {
     res.json(articles);
   } catch (err: any) {
     console.warn("Firestore fetch articles fallback triggered:", err?.message || err);
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json(INITIAL_ARTICLES);
   }
 });
@@ -1110,6 +1130,7 @@ app.get('/api/articles', async (req, res) => {
 // 5. Fetch notifications (Public notifications with fallback)
 app.get('/api/notifications', async (req, res) => {
   try {
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     const snapshot = await db.collection('notifications').get();
     const notifications: any[] = [];
     snapshot.forEach(docSnap => {
@@ -1121,6 +1142,7 @@ app.get('/api/notifications', async (req, res) => {
     res.json(notifications);
   } catch (err: any) {
     console.warn("Firestore fetch notifications fallback triggered:", err?.message || err);
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json(INITIAL_NOTIFICATIONS);
   }
 });
@@ -1128,6 +1150,7 @@ app.get('/api/notifications', async (req, res) => {
 // 6. Fetch stats (Public performance stats with fallback)
 app.get('/api/stats', async (req, res) => {
   try {
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     const docSnap = await db.collection('stats').doc('overall').get();
     if (docSnap.exists) {
       res.json(docSnap.data());
@@ -1136,6 +1159,7 @@ app.get('/api/stats', async (req, res) => {
     }
   } catch (err: any) {
     console.warn("Firestore fetch stats fallback triggered:", err?.message || err);
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json(INITIAL_STATS);
   }
 });
@@ -1982,13 +2006,15 @@ app.post('/api/admin/payments/approve', requireAdmin, async (req, res) => {
     else if (plan === '6months') expiryDate.setMonth(expiryDate.getMonth() + 6);
     else if (plan === 'yearly') expiryDate.setFullYear(expiryDate.getFullYear() + 1);
 
-    // Update payment log
-    await payRef.update({
+    // Update payment log safely with merge
+    await payRef.set({
+      ...payData,
       status: 'approved',
+      paymentStatus: 'approved',
       approvedAt: timestampStr,
       approvedBy: adminActorEmail,
       approvalNotes: notes || 'Verified and approved by Administrator'
-    });
+    }, { merge: true });
 
     // Update user profile to Active/Approved state
     const userRef = db.collection('users').doc(uid);
@@ -2055,14 +2081,16 @@ app.post('/api/admin/payments/reject', requireAdmin, async (req, res) => {
     const timestampStr = new Date().toISOString();
     const rejectionText = reason || 'Payment transaction reference or receipt could not be verified by Administrator.';
 
-    // Update payment log
+    // Update payment log safely with merge
     const payRef = db.collection('payments').doc(paymentId);
-    await payRef.update({
+    await payRef.set({
+      id: paymentId,
       status: 'rejected',
+      paymentStatus: 'rejected',
       rejectedAt: timestampStr,
       rejectedBy: adminActorEmail,
       rejectionReason: rejectionText
-    });
+    }, { merge: true });
 
     // Update user profile
     const userRef = db.collection('users').doc(uid);
@@ -2538,11 +2566,13 @@ app.get('/api/admin/keys/payments', requireAdmin, (req, res) => {
  */
 app.post('/api/admin/keys/approve-payment', requireAdmin, async (req, res) => {
   try {
-    const { paymentId } = req.body;
-    if (!paymentId) return res.status(400).json({ error: "paymentId required" });
+    const rawId = req.body.paymentId || req.body.id || req.body.reference || req.body.paymentReference || req.body.transactionReference;
+    if (!rawId) {
+      return res.status(400).json({ error: "paymentId or reference required", message: "Missing payment identifier or transaction reference." });
+    }
 
     const adminActor = req.user?.email || 'Master Administrator';
-    const result = await approveAccountlessPayment(paymentId, adminActor);
+    const result = await approveAccountlessPayment(String(rawId).trim(), adminActor);
 
     res.json({
       success: true,
@@ -2560,11 +2590,14 @@ app.post('/api/admin/keys/approve-payment', requireAdmin, async (req, res) => {
  */
 app.post('/api/admin/keys/reject-payment', requireAdmin, async (req, res) => {
   try {
-    const { paymentId, reason } = req.body;
-    if (!paymentId) return res.status(400).json({ error: "paymentId required" });
+    const rawId = req.body.paymentId || req.body.id || req.body.reference || req.body.paymentReference || req.body.transactionReference;
+    const { reason } = req.body;
+    if (!rawId) {
+      return res.status(400).json({ error: "paymentId or reference required", message: "Missing payment identifier or transaction reference." });
+    }
 
     const adminActor = req.user?.email || 'Master Administrator';
-    const payment = await rejectAccountlessPayment(paymentId, reason || 'Payment unverified', adminActor);
+    const payment = await rejectAccountlessPayment(String(rawId).trim(), reason || 'Payment unverified', adminActor);
 
     res.json({
       success: true,
@@ -3002,10 +3035,15 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
  * ============================================================================
  */
 async function startServer() {
+  const httpServer = http.createServer(app);
+
   if (process.env.NODE_ENV !== 'production') {
-    // Integrate Vite dev server middleware so Vite handles HMR and module resolution
+    // Integrate Vite dev server middleware with HMR disabled to prevent WebSocket connection failures in sandboxed proxies
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -3019,7 +3057,7 @@ async function startServer() {
   }
 
   // Start Server listening on 0.0.0.0 and port 3000
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Rafiki Predict full-stack server listening on http://localhost:${PORT}`);
   });
 }

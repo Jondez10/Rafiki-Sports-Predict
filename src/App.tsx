@@ -76,21 +76,35 @@ import {
 import { translations } from './translations';
 import { APP_LOGO } from './assets';
 
-// Subcomponents
+// Subcomponents - Eagerly load primary tab for instant first render, lazily load secondary views
 import PredictionsTab from './components/PredictionsTab';
-import SubscriptionTab from './components/SubscriptionTab';
-import ArchiveTab from './components/ArchiveTab';
-import ArticlesTab from './components/ArticlesTab';
-import ResponsibleGambling from './components/ResponsibleGambling';
-import AdminDashboard from './components/AdminDashboard';
-import DailyQuiz from './components/DailyQuiz';
-import GmailTab from './components/GmailTab';
-import BettingBuddy from './components/BettingBuddy';
-import CustomerSupportAgent from './components/CustomerSupportAgent';
 import AppBanner from './components/AppBanner';
 import { useAccessKeySession } from './lib/accessKeySession';
-import CommunityModal from './components/CommunityModal';
 import ScreenScrollControls from './components/ScreenScrollControls';
+import ConnectionHealthIndicator, { GlobalConnectionHealthBanner } from './components/ConnectionHealthIndicator';
+
+// Code-split heavy secondary tabs & dialogs for lightning-fast initial load & reduced main thread work
+const SubscriptionTab = React.lazy(() => import('./components/SubscriptionTab'));
+const ArchiveTab = React.lazy(() => import('./components/ArchiveTab'));
+const ArticlesTab = React.lazy(() => import('./components/ArticlesTab'));
+const ResponsibleGambling = React.lazy(() => import('./components/ResponsibleGambling'));
+const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
+const DailyQuiz = React.lazy(() => import('./components/DailyQuiz'));
+const GmailTab = React.lazy(() => import('./components/GmailTab'));
+const BettingBuddy = React.lazy(() => import('./components/BettingBuddy'));
+const CustomerSupportAgent = React.lazy(() => import('./components/CustomerSupportAgent'));
+const CommunityModal = React.lazy(() => import('./components/CommunityModal'));
+
+const TabSuspenseSkeleton: React.FC = () => (
+  <div className="py-8 px-4 max-w-5xl mx-auto space-y-6 animate-pulse">
+    <div className="h-10 bg-zinc-800/50 rounded-2xl w-1/3 border border-zinc-700/30"></div>
+    <div className="h-4 bg-zinc-800/40 rounded-lg w-2/3"></div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+      <div className="h-44 bg-zinc-800/30 rounded-2xl border border-zinc-800/50"></div>
+      <div className="h-44 bg-zinc-800/30 rounded-2xl border border-zinc-800/50"></div>
+    </div>
+  </div>
+);
 
 // Badge Definitions and Helpers
 export interface PerformanceBadge {
@@ -237,15 +251,18 @@ export default function App() {
   const [communityModalOpen, setCommunityModalOpen] = useState(false);
   const [shareSuccess, setShareSuccess] = useState(false);
 
-  // Admin Dashboard Password Verification Session State
+  // Admin Dashboard Password Verification Session State (Server Authoritative)
   const [isAdminVerified, setIsAdminVerified] = useState<boolean>(() => {
-    return sessionStorage.getItem('rafiki_admin_verified_session') === 'true' || localStorage.getItem('rafiki_admin_secret_key') === '27885861';
+    return sessionStorage.getItem('rafiki_admin_verified_session') === 'true';
   });
   const [adminAuthModalOpen, setAdminAuthModalOpen] = useState(false);
+  const [adminAuthUsername, setAdminAuthUsername] = useState('');
   const [adminAuthPassword, setAdminAuthPassword] = useState('');
   const [showAdminAuthPassword, setShowAdminAuthPassword] = useState(false);
   const [adminAuthError, setAdminAuthError] = useState('');
   const [isAdminVerifying, setIsAdminVerifying] = useState(false);
+  const [isAdminShake, setIsAdminShake] = useState(false);
+  const adminAuthInputRef = useRef<HTMLInputElement>(null);
 
   // Admin Access Trigger Handler
   const handleAdminTabAccess = () => {
@@ -255,33 +272,56 @@ export default function App() {
       setAdminAuthPassword('');
       setAdminAuthError('');
       setAdminAuthModalOpen(true);
+      setTimeout(() => adminAuthInputRef.current?.focus(), 100);
     }
   };
 
-  // Admin Password Verification Handler (Enforces '27885861')
-  const handleVerifyAdminPassword = (e?: React.FormEvent) => {
+  // Admin Password Verification Handler (Server Authoritative)
+  const handleVerifyAdminPassword = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const candidate = adminAuthPassword.trim();
     if (!candidate) {
+      setIsAdminShake(true);
+      setTimeout(() => setIsAdminShake(false), 500);
       setAdminAuthError(language === 'en' ? 'Please enter the administrator password.' : 'Tafadhali weka nenosiri la msimamizi.');
+      adminAuthInputRef.current?.focus();
       return;
     }
     setIsAdminVerifying(true);
     setAdminAuthError('');
 
-    if (candidate === '27885861') {
-      setIsAdminVerified(true);
-      sessionStorage.setItem('rafiki_admin_verified_session', 'true');
-      sessionStorage.setItem('rafiki_admin_unlocked', 'true');
-      localStorage.setItem('rafiki_admin_secret_key', '27885861');
-      setAdminAuthModalOpen(false);
-      setAdminAuthPassword('');
-      setAdminAuthError('');
-      setActiveTab('admin');
-      setIsAdminVerifying(false);
-    } else {
-      setIsAdminVerifying(false);
+    try {
+      const response = await fetch('/api/admin/verify-secret', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Admin-Secret': candidate
+        },
+        body: JSON.stringify({ adminSecretKey: candidate, adminEmail: adminAuthUsername.trim() })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.success) {
+        setIsAdminVerified(true);
+        sessionStorage.setItem('rafiki_admin_verified_session', 'true');
+        sessionStorage.setItem('rafiki_admin_unlocked', 'true');
+        localStorage.setItem('rafiki_admin_secret_key', candidate);
+        setAdminAuthModalOpen(false);
+        setAdminAuthPassword('');
+        setAdminAuthError('');
+        setActiveTab('admin');
+      } else {
+        setIsAdminShake(true);
+        setTimeout(() => setIsAdminShake(false), 500);
+        setAdminAuthError(t.incorrectAdminPassword || 'Incorrect credentials. Access denied.');
+        adminAuthInputRef.current?.focus();
+      }
+    } catch {
+      setIsAdminShake(true);
+      setTimeout(() => setIsAdminShake(false), 500);
       setAdminAuthError(t.incorrectAdminPassword || 'Incorrect password. Access denied.');
+      adminAuthInputRef.current?.focus();
+    } finally {
+      setIsAdminVerifying(false);
     }
   };
 
@@ -447,7 +487,18 @@ export default function App() {
     } catch (_) {}
     return null;
   });
-  const [dataLoading, setDataLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState<boolean>(() => {
+    try {
+      const cached = localStorage.getItem('rafiki-predictions-cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed?.predictions) && parsed.predictions.length > 0) {
+          return false; // Instant first render from local cache
+        }
+      }
+    } catch (_) {}
+    return true;
+  });
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [savedPredictions, setSavedPredictions] = useState<SavedPrediction[]>([]);
   
@@ -524,7 +575,8 @@ export default function App() {
 
   // 2. Fetch API & Remote Synchronized Data with Exponential Backoff Retries
   const fetchPlatformData = async (retryAttempt: number = 0, maxRetries: number = 3) => {
-    setDataLoading(true);
+    // Only show full blocking spinner if no predictions exist yet (instant display pattern)
+    setDataLoading(prev => (predictions.length === 0 ? true : false));
     setSyncState(prev => ({
       ...prev,
       status: retryAttempt > 0 ? 'retrying' : 'syncing',
@@ -786,6 +838,9 @@ export default function App() {
   return (
     <div className={`min-h-screen ${theme === 'high-contrast' ? 'theme-high-contrast bg-slate-50 text-slate-900' : 'bg-black text-gray-100'} flex flex-col justify-between selection:bg-emerald-500 selection:text-black antialiased font-sans`}>
       
+      {/* GLOBAL CONNECTION HEALTH STATUS BANNER (Triggers on API / WebSocket / HMR interruptions) */}
+      <GlobalConnectionHealthBanner language={language} />
+
       {/* HEADER SECTION - TWO COMPACT ROWS THAT SCROLL NATURALLY UPWARDS WITH CONTENT */}
       <header className="bg-zinc-950/95 backdrop-blur-md border-b border-zinc-900 z-30 relative transition-all" id="app-header">
         <div className="max-w-7xl mx-auto px-3 sm:px-5 lg:px-8">
@@ -960,9 +1015,12 @@ export default function App() {
                 </button>
               </div>
 
-              {/* TOP ROW B: AI Buddy, Notifications, Theme Mode, Settings, Share App */}
+              {/* TOP ROW B: Connection Health, AI Buddy, Notifications, Theme Mode, Settings, Share App */}
               <div className="flex items-center gap-1.5 sm:gap-2" id="header-top-row-b">
                 
+                {/* Global Connection Health Check Status Indicator */}
+                <ConnectionHealthIndicator language={language} />
+
                 {/* Betting Buddy AI Chat Trigger */}
                 <button 
                   onClick={() => {
@@ -1487,6 +1545,23 @@ export default function App() {
                   </button>
                 </div>
               </div>
+
+              {/* System Connection Health Section in Settings */}
+              <div className="space-y-2 pt-3 border-t border-zinc-900">
+                <label className="text-[10px] font-bold font-mono uppercase tracking-wider text-gray-500 block flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                    {language === 'en' ? 'Live System Connection' : 'Muunganisho wa Mfumo'}
+                  </span>
+                </label>
+                <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800/80 flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-semibold text-white">Rafiki Predict Gateway</span>
+                    <span className="text-[10px] text-zinc-400 font-mono mt-0.5">Real-time health telemetry</span>
+                  </div>
+                  <ConnectionHealthIndicator language={language} showDetailsDropdown={true} />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1638,53 +1713,67 @@ export default function App() {
             )}
 
             {activeTab === 'subscription' && (
-              <SubscriptionTab 
-                onGuestPassActivated={handleGuestPassActivated}
-              />
+              <React.Suspense fallback={<TabSuspenseSkeleton />}>
+                <SubscriptionTab 
+                  onGuestPassActivated={handleGuestPassActivated}
+                />
+              </React.Suspense>
             )}
 
             {activeTab === 'archive' && (
-              <ArchiveTab 
-                historicalPredictions={predictions.filter(p => p.id.startsWith('p-hist-'))} 
-                stats={stats} 
-                language={language}
-                savedPredictions={savedPredictions}
-              />
+              <React.Suspense fallback={<TabSuspenseSkeleton />}>
+                <ArchiveTab 
+                  historicalPredictions={predictions.filter(p => p.id.startsWith('p-hist-'))} 
+                  stats={stats} 
+                  language={language} 
+                  savedPredictions={savedPredictions}
+                />
+              </React.Suspense>
             )}
 
             {activeTab === 'articles' && (
-              <ArticlesTab articles={articles} />
+              <React.Suspense fallback={<TabSuspenseSkeleton />}>
+                <ArticlesTab articles={articles} />
+              </React.Suspense>
             )}
 
             {activeTab === 'responsible' && (
-              <ResponsibleGambling />
+              <React.Suspense fallback={<TabSuspenseSkeleton />}>
+                <ResponsibleGambling />
+              </React.Suspense>
             )}
 
             {activeTab === 'quiz' && (
-              <DailyQuiz 
-                predictions={predictions} 
-                userProfile={userProfile} 
-              />
+              <React.Suspense fallback={<TabSuspenseSkeleton />}>
+                <DailyQuiz 
+                  predictions={predictions} 
+                  userProfile={userProfile} 
+                />
+              </React.Suspense>
             )}
 
             {activeTab === 'gmail' && (
-              <GmailTab 
-                userProfile={userProfile}
-                language={language}
-                theme={theme}
-                displayDensity={displayDensity}
-              />
+              <React.Suspense fallback={<TabSuspenseSkeleton />}>
+                <GmailTab 
+                  userProfile={userProfile}
+                  language={language}
+                  theme={theme}
+                  displayDensity={displayDensity}
+                />
+              </React.Suspense>
             )}
 
             {activeTab === 'admin' && (
-              <AdminDashboard 
-                predictions={predictions} 
-                articles={articles} 
-                notifications={notifications} 
-                stats={stats} 
-                onRefreshData={fetchPlatformData} 
-                onLock={handleLockAdminSession}
-              />
+              <React.Suspense fallback={<TabSuspenseSkeleton />}>
+                <AdminDashboard 
+                  predictions={predictions} 
+                  articles={articles} 
+                  notifications={notifications} 
+                  stats={stats} 
+                  onRefreshData={fetchPlatformData} 
+                  onLock={handleLockAdminSession}
+                />
+              </React.Suspense>
             )}
           </div>
         )}
@@ -2097,19 +2186,27 @@ export default function App() {
       </div>
 
       {/* Betting Buddy AI Drawer */}
-      <BettingBuddy 
-        isOpen={buddyOpen} 
-        onClose={() => setBuddyOpen(false)} 
-        language={language} 
-        translations={translations[language]} 
-      />
+      <React.Suspense fallback={null}>
+        {buddyOpen && (
+          <BettingBuddy 
+            isOpen={buddyOpen} 
+            onClose={() => setBuddyOpen(false)} 
+            language={language} 
+            translations={translations[language]} 
+          />
+        )}
+      </React.Suspense>
 
       {/* AI Customer Support Agent Drawer */}
-      <CustomerSupportAgent
-        isOpen={supportOpen}
-        onClose={() => setSupportOpen(false)}
-        language={language}
-      />
+      <React.Suspense fallback={null}>
+        {supportOpen && (
+          <CustomerSupportAgent
+            isOpen={supportOpen}
+            onClose={() => setSupportOpen(false)}
+            language={language}
+          />
+        )}
+      </React.Suspense>
 
       {/* BADGES SHOWCASE MODAL */}
       <AnimatePresence>
@@ -2642,11 +2739,35 @@ export default function App() {
               </div>
 
               <p className="text-xs text-gray-300 leading-relaxed">
-                {t.adminModalDesc || 'Enter the administrator password to unlock the system management dashboard and operational controls.'}
+                {t.adminModalDesc || 'Enter the administrator username and password to unlock the system management dashboard and operational controls.'}
               </p>
 
               {/* Verification Form */}
               <form onSubmit={handleVerifyAdminPassword} className="space-y-4">
+                {/* Admin Username */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-gray-300 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                      {t.adminUsernameLabel || 'Administrator Username / Email'}
+                    </span>
+                    <span className="text-[10px] text-gray-500 font-mono">Verified Admin</span>
+                  </label>
+                  <input
+                    id="admin-auth-username-input"
+                    type="email"
+                    autoComplete="off"
+                    value={adminAuthUsername}
+                    onChange={(e) => {
+                      setAdminAuthUsername(e.target.value);
+                      setAdminAuthError('');
+                    }}
+                    placeholder={t.adminUsernamePlaceholder || 'Enter administrator username / email'}
+                    className="w-full bg-zinc-950 border border-zinc-750 focus:border-purple-500 rounded-xl px-4 py-2.5 text-sm text-white font-mono placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all"
+                  />
+                </div>
+
+                {/* Admin Password */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-gray-300 flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
@@ -2655,36 +2776,64 @@ export default function App() {
                     </span>
                     <span className="text-[10px] text-gray-500 font-mono">Restricted</span>
                   </label>
-                  <div className="relative">
+                  
+                  {/* Invisible decoys to disable Chrome/browser autofill heuristics */}
+                  <input type="text" className="hidden" tabIndex={-1} aria-hidden="true" autoComplete="off" />
+                  <input type="password" className="hidden" tabIndex={-1} aria-hidden="true" autoComplete="off" />
+
+                  <motion.div 
+                    animate={isAdminShake ? { x: [-10, 10, -8, 8, -4, 4, 0] } : { x: 0 }}
+                    transition={{ duration: 0.45 }}
+                    className="relative flex items-center"
+                  >
                     <input
+                      ref={adminAuthInputRef}
                       id="admin-auth-passcode-input"
-                      name="admin_passcode_pin"
+                      name="sys_sec_pin_entry_token"
                       type={showAdminAuthPassword ? 'text' : 'password'}
-                      autoComplete="off"
+                      autoComplete="new-password"
                       autoCorrect="off"
                       autoCapitalize="off"
                       spellCheck={false}
                       data-lpignore="true"
                       data-1p-ignore="true"
+                      data-bwignore="true"
                       data-form-type="other"
                       value={adminAuthPassword}
                       onChange={(e) => {
                         setAdminAuthPassword(e.target.value);
                         setAdminAuthError('');
                       }}
-                      placeholder={t.adminPasswordPlaceholder || 'Enter password (e.g. 27885861)'}
+                      placeholder={t.adminPasswordPlaceholder || 'Enter password'}
                       autoFocus
-                      className="w-full bg-zinc-950 border border-zinc-750 focus:border-purple-500 rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500/20 pr-12 transition-all"
+                      className="w-full bg-zinc-950 border border-zinc-750 focus:border-purple-500 rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500/20 pr-20 transition-all"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowAdminAuthPassword(!showAdminAuthPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 p-1 cursor-pointer"
-                      title={showAdminAuthPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showAdminAuthPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
+
+                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                      {adminAuthPassword.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAdminAuthPassword('');
+                            setAdminAuthError('');
+                            adminAuthInputRef.current?.focus();
+                          }}
+                          className="text-gray-400 hover:text-white p-1 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer"
+                          title="Clear input"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowAdminAuthPassword(!showAdminAuthPassword)}
+                        className="text-gray-400 hover:text-gray-200 p-1 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer"
+                        title={showAdminAuthPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showAdminAuthPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </motion.div>
                 </div>
 
                 {adminAuthError && (
@@ -2736,11 +2885,15 @@ export default function App() {
       </AnimatePresence>
 
       {/* Community & Social Hub Modal */}
-      <CommunityModal 
-        isOpen={communityModalOpen} 
-        onClose={() => setCommunityModalOpen(false)} 
-        language={language} 
-      />
+      <React.Suspense fallback={null}>
+        {communityModalOpen && (
+          <CommunityModal 
+            isOpen={communityModalOpen} 
+            onClose={() => setCommunityModalOpen(false)} 
+            language={language} 
+          />
+        )}
+      </React.Suspense>
 
       {/* Screen Scroll Controls: Bottom Horizontal Scrollbar & Far-End Vertical Scrollbar */}
       <ScreenScrollControls theme={theme} />

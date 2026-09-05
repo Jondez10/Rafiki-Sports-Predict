@@ -89,6 +89,37 @@ export default function AdminAccessKeysTab({ adminSecretKey }: AdminAccessKeysTa
   const [actionMessage, setActionMessage] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
+  // Dedicated In-UI Action Confirmation Modal (Block, Unblock, Revoke, Reset, Reject)
+  const [actionModal, setActionModal] = useState<{
+    isOpen: boolean;
+    type: 'block' | 'unblock' | 'revoke' | 'reset-session' | 'reject-payment';
+    id: string;
+    title: string;
+    description: string;
+    requiresReason?: boolean;
+    reason: string;
+    presetReasons?: string[];
+    isProcessing: boolean;
+    errorMessage: string | null;
+  }>({
+    isOpen: false,
+    type: 'block',
+    id: '',
+    title: '',
+    description: '',
+    requiresReason: false,
+    reason: '',
+    isProcessing: false,
+    errorMessage: null,
+  });
+
+  // Approved Payment WhatsApp Share Prompt (in-UI modal instead of window.confirm)
+  const [paymentApprovedShare, setPaymentApprovedShare] = useState<{
+    keyCode: string;
+    clientContact: string;
+    waUrl: string;
+  } | null>(null);
+
   // Fetch Overview
   const fetchOverview = async () => {
     setIsOverviewLoading(true);
@@ -189,72 +220,181 @@ export default function AdminAccessKeysTab({ adminSecretKey }: AdminAccessKeysTa
     setTimeout(() => setCopiedCode(null), 2500);
   };
 
-  // Key Actions
-  const handleBlockKey = async (keyCode: string) => {
-    const reason = window.prompt('Enter reason for blocking this key (e.g. Account sharing violation):', 'Policy violation');
-    if (reason === null) return;
-
-    try {
-      const res = await authFetch('/api/admin/keys/block', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyCode, reason })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setActionMessage(`✓ Key ${keyCode} blocked successfully.`);
-        fetchKeys();
-        fetchOverview();
-      } else {
-        alert(data.message || 'Failed to block key');
-      }
-    } catch (err: any) {
-      alert(err.message);
-    }
+  // Key Actions - Open In-UI Modals (Guaranteed to work in sandboxed iframes)
+  const handleBlockKey = (keyCode: string) => {
+    setActionModal({
+      isOpen: true,
+      type: 'block',
+      id: keyCode,
+      title: 'Block VIP Access Key',
+      description: 'Blocking this key immediately suspends VIP access and invalidates all current browser sessions for this subscriber.',
+      requiresReason: true,
+      reason: 'Account sharing violation',
+      presetReasons: [
+        'Account sharing violation',
+        'Suspicious device activity',
+        'Policy violation',
+        'Fraudulent transaction',
+        'Manual admin block'
+      ],
+      isProcessing: false,
+      errorMessage: null,
+    });
   };
 
-  const handleUnblockKey = async (keyCode: string) => {
-    if (!window.confirm(`Unblock Access Key ${keyCode}?`)) return;
-
-    try {
-      const res = await authFetch('/api/admin/keys/unblock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyCode })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setActionMessage(`✓ Key ${keyCode} unblocked successfully.`);
-        fetchKeys();
-        fetchOverview();
-      } else {
-        alert(data.message || 'Failed to unblock key');
-      }
-    } catch (err: any) {
-      alert(err.message);
-    }
+  const handleUnblockKey = (keyCode: string) => {
+    setActionModal({
+      isOpen: true,
+      type: 'unblock',
+      id: keyCode,
+      title: 'Unblock Access Key',
+      description: 'Reactivate this VIP access key so the client can resume accessing premium VIP tips and predictions.',
+      requiresReason: false,
+      reason: '',
+      isProcessing: false,
+      errorMessage: null,
+    });
   };
 
-  const handleRevokeKey = async (keyCode: string) => {
-    const reason = window.prompt('Permanently revoke this key? Reason:', 'Fraudulent transaction');
-    if (reason === null) return;
+  const handleRevokeKey = (keyCode: string) => {
+    setActionModal({
+      isOpen: true,
+      type: 'revoke',
+      id: keyCode,
+      title: 'Permanently Revoke Access Key',
+      description: 'Revoking is permanent and irreversible. This access key will be cancelled and cannot be reactivated.',
+      requiresReason: true,
+      reason: 'Fraudulent transaction',
+      presetReasons: [
+        'Fraudulent transaction',
+        'Chargeback / refund dispute',
+        'Violation of terms of service'
+      ],
+      isProcessing: false,
+      errorMessage: null,
+    });
+  };
+
+  const handleResetSession = (keyCode: string) => {
+    setActionModal({
+      isOpen: true,
+      type: 'reset-session',
+      id: keyCode,
+      title: 'Reset Active Device Sessions',
+      description: 'This will unbind all active devices and clear cached session tokens for this key, requiring the user to re-authenticate.',
+      requiresReason: false,
+      reason: '',
+      isProcessing: false,
+      errorMessage: null,
+    });
+  };
+
+  const handleRejectPayment = (paymentId: string) => {
+    setActionModal({
+      isOpen: true,
+      type: 'reject-payment',
+      id: paymentId,
+      title: 'Reject Payment Submission',
+      description: 'Mark this transaction submission as rejected and record the rejection reason in the audit logs.',
+      requiresReason: true,
+      reason: 'Invalid or unverified transaction code',
+      presetReasons: [
+        'Invalid or unverified transaction code',
+        'Payment amount mismatch',
+        'Transaction code already redeemed',
+        'Fake or test submission'
+      ],
+      isProcessing: false,
+      errorMessage: null,
+    });
+  };
+
+  const handleExecuteAction = async () => {
+    if (!actionModal.isOpen || actionModal.isProcessing) return;
+    setActionModal(prev => ({ ...prev, isProcessing: true, errorMessage: null }));
 
     try {
-      const res = await authFetch('/api/admin/keys/revoke', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyCode, reason })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setActionMessage(`✓ Key ${keyCode} permanently revoked.`);
-        fetchKeys();
-        fetchOverview();
-      } else {
-        alert(data.message || 'Failed to revoke key');
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(adminSecretKey ? { 'X-Admin-Secret': adminSecretKey } : {})
+      };
+
+      if (actionModal.type === 'block') {
+        const res = await authFetch('/api/admin/keys/block', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ keyCode: actionModal.id, reason: actionModal.reason || 'Policy violation' })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+          setActionMessage(`✓ Access Key ${actionModal.id} has been BLOCKED.`);
+          setActionModal(prev => ({ ...prev, isOpen: false, isProcessing: false }));
+          fetchKeys();
+          fetchOverview();
+        } else {
+          setActionModal(prev => ({ ...prev, isProcessing: false, errorMessage: data.message || 'Failed to block key' }));
+        }
+      } else if (actionModal.type === 'unblock') {
+        const res = await authFetch('/api/admin/keys/unblock', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ keyCode: actionModal.id })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+          setActionMessage(`✓ Access Key ${actionModal.id} has been UNBLOCKED.`);
+          setActionModal(prev => ({ ...prev, isOpen: false, isProcessing: false }));
+          fetchKeys();
+          fetchOverview();
+        } else {
+          setActionModal(prev => ({ ...prev, isProcessing: false, errorMessage: data.message || 'Failed to unblock key' }));
+        }
+      } else if (actionModal.type === 'revoke') {
+        const res = await authFetch('/api/admin/keys/revoke', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ keyCode: actionModal.id, reason: actionModal.reason || 'Revoked' })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+          setActionMessage(`✓ Key ${actionModal.id} permanently revoked.`);
+          setActionModal(prev => ({ ...prev, isOpen: false, isProcessing: false }));
+          fetchKeys();
+          fetchOverview();
+        } else {
+          setActionModal(prev => ({ ...prev, isProcessing: false, errorMessage: data.message || 'Failed to revoke key' }));
+        }
+      } else if (actionModal.type === 'reset-session') {
+        const res = await authFetch('/api/admin/keys/reset-session', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ keyCode: actionModal.id })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+          setActionMessage(`✓ Active sessions reset for key ${actionModal.id}.`);
+          setActionModal(prev => ({ ...prev, isOpen: false, isProcessing: false }));
+          fetchKeys();
+        } else {
+          setActionModal(prev => ({ ...prev, isProcessing: false, errorMessage: data.message || 'Failed to reset sessions' }));
+        }
+      } else if (actionModal.type === 'reject-payment') {
+        const res = await authFetch('/api/admin/keys/reject-payment', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ paymentId: actionModal.id, reason: actionModal.reason || 'Rejected' })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+          setActionMessage(`✓ Payment ${actionModal.id} has been rejected.`);
+          setActionModal(prev => ({ ...prev, isOpen: false, isProcessing: false }));
+          fetchPayments();
+        } else {
+          setActionModal(prev => ({ ...prev, isProcessing: false, errorMessage: data.message || 'Failed to reject payment' }));
+        }
       }
     } catch (err: any) {
-      alert(err.message);
+      setActionModal(prev => ({ ...prev, isProcessing: false, errorMessage: err.message || 'Network error processing request' }));
     }
   };
 
@@ -262,40 +402,22 @@ export default function AdminAccessKeysTab({ adminSecretKey }: AdminAccessKeysTa
     try {
       const res = await authFetch('/api/admin/keys/extend', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(adminSecretKey ? { 'X-Admin-Secret': adminSecretKey } : {})
+        },
         body: JSON.stringify({ keyCode, hours })
       });
-      const data = await res.json();
-      if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
         setActionMessage(`✓ Key ${keyCode} extended by +${hours} hours.`);
         fetchKeys();
         fetchOverview();
       } else {
-        alert(data.message || 'Failed to extend key');
+        setActionMessage(`⚠️ Failed to extend key: ${data.message || 'Error'}`);
       }
     } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  const handleResetSession = async (keyCode: string) => {
-    if (!window.confirm(`Reset active device sessions for key ${keyCode}? (User will need to re-enter key)`)) return;
-
-    try {
-      const res = await authFetch('/api/admin/keys/reset-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyCode })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setActionMessage(`✓ Sessions reset for key ${keyCode}.`);
-        fetchKeys();
-      } else {
-        alert(data.message || 'Failed to reset session');
-      }
-    } catch (err: any) {
-      alert(err.message);
+      setActionMessage(`⚠️ Error extending key: ${err.message}`);
     }
   };
 
@@ -304,50 +426,32 @@ export default function AdminAccessKeysTab({ adminSecretKey }: AdminAccessKeysTa
     try {
       const res = await authFetch('/api/admin/keys/approve-payment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(adminSecretKey ? { 'X-Admin-Secret': adminSecretKey } : {})
+        },
         body: JSON.stringify({ paymentId })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.accessKey) {
         setActionMessage(`✓ Payment approved! Key generated: ${data.accessKey.keyCode}`);
         fetchPayments();
         fetchKeys();
         fetchOverview();
-        // Prompt WhatsApp share if contact available
         if (data.whatsAppShareText) {
           const clientContact = data.payment?.phone || '';
           const waUrl = `https://wa.me/${clientContact.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(data.whatsAppShareText)}`;
-          if (window.confirm(`Payment Approved! Key: ${data.accessKey.keyCode}\n\nOpen WhatsApp to send key to client?`)) {
-            window.open(waUrl, '_blank');
-          }
+          setPaymentApprovedShare({
+            keyCode: data.accessKey.keyCode,
+            clientContact,
+            waUrl
+          });
         }
       } else {
-        alert(data.message || 'Failed to approve payment');
+        setActionMessage(`⚠️ Failed to approve payment: ${data.message || 'Failed'}`);
       }
     } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  const handleRejectPayment = async (paymentId: string) => {
-    const reason = window.prompt('Enter rejection reason:', 'Invalid or unverified transaction code');
-    if (reason === null) return;
-
-    try {
-      const res = await authFetch('/api/admin/keys/reject-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentId, reason })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setActionMessage(`✓ Payment rejected.`);
-        fetchPayments();
-      } else {
-        alert(data.message || 'Failed to reject payment');
-      }
-    } catch (err: any) {
-      alert(err.message);
+      setActionMessage(`⚠️ Connectivity error: ${err.message}`);
     }
   };
 
@@ -777,16 +881,18 @@ export default function AdminAccessKeysTab({ adminSecretKey }: AdminAccessKeysTa
                               {/* Block / Unblock */}
                               {k.status === 'BLOCKED' ? (
                                 <button
+                                  id={`btn-unblock-key-${k.keyCode}`}
                                   onClick={() => handleUnblockKey(k.keyCode)}
-                                  className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300"
+                                  className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 transition-colors cursor-pointer"
                                   title="Unblock Key"
                                 >
                                   <Unlock className="w-3.5 h-3.5" />
                                 </button>
                               ) : (
                                 <button
+                                  id={`btn-block-key-${k.keyCode}`}
                                   onClick={() => handleBlockKey(k.keyCode)}
-                                  className="p-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300"
+                                  className="p-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 transition-colors cursor-pointer"
                                   title="Block Key"
                                 >
                                   <Lock className="w-3.5 h-3.5" />
@@ -795,17 +901,31 @@ export default function AdminAccessKeysTab({ adminSecretKey }: AdminAccessKeysTa
 
                               {/* Reset Session */}
                               <button
+                                id={`btn-reset-session-${k.keyCode}`}
                                 onClick={() => handleResetSession(k.keyCode)}
-                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
                                 title="Reset Session / Device Binding"
                               >
                                 <RefreshCw className="w-3.5 h-3.5" />
                               </button>
 
+                              {/* Revoke Key */}
+                              {k.status !== 'REVOKED' && (
+                                <button
+                                  id={`btn-revoke-key-${k.keyCode}`}
+                                  onClick={() => handleRevokeKey(k.keyCode)}
+                                  className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 transition-colors cursor-pointer"
+                                  title="Permanently Revoke Key"
+                                >
+                                  <Slash className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
                               {/* View History */}
                               <button
+                                id={`btn-view-history-${k.keyCode}`}
                                 onClick={() => setSelectedKeyHistory(k)}
-                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
                                 title="View Key Audit History"
                               >
                                 <History className="w-3.5 h-3.5" />
@@ -921,15 +1041,17 @@ export default function AdminAccessKeysTab({ adminSecretKey }: AdminAccessKeysTa
                           {p.status === 'PENDING' ? (
                             <div className="inline-flex items-center gap-1.5">
                               <button
+                                id={`btn-approve-payment-${p.id}`}
                                 onClick={() => handleApprovePayment(p.id)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md transition-colors cursor-pointer"
                               >
                                 <Check className="w-3.5 h-3.5" />
                                 Approve &amp; Key
                               </button>
                               <button
+                                id={`btn-reject-payment-${p.id}`}
                                 onClick={() => handleRejectPayment(p.id)}
-                                className="px-2.5 py-1.5 rounded-lg bg-rose-900/30 hover:bg-rose-900/50 text-rose-300 font-semibold text-xs border border-rose-700/40"
+                                className="px-2.5 py-1.5 rounded-lg bg-rose-900/30 hover:bg-rose-900/50 text-rose-300 font-semibold text-xs border border-rose-700/40 transition-colors cursor-pointer"
                               >
                                 Reject
                               </button>
@@ -1235,9 +1357,62 @@ export default function AdminAccessKeysTab({ adminSecretKey }: AdminAccessKeysTa
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div>
                 <h3 className="text-base font-bold text-white">Key History &amp; Timeline</h3>
-                <code className="text-xs font-mono text-emerald-400">{selectedKeyHistory.keyCode}</code>
+                <div className="flex items-center gap-2 mt-1">
+                  <code className="text-xs font-mono text-emerald-400 font-bold">{selectedKeyHistory.keyCode}</code>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                    selectedKeyHistory.status === 'ACTIVE' ? 'bg-emerald-500/20 text-emerald-300' :
+                    selectedKeyHistory.status === 'BLOCKED' ? 'bg-rose-500/20 text-rose-300' :
+                    selectedKeyHistory.status === 'EXPIRED' ? 'bg-slate-800 text-slate-400' :
+                    'bg-amber-500/20 text-amber-300'
+                  }`}>
+                    {selectedKeyHistory.status}
+                  </span>
+                </div>
               </div>
-              <button onClick={() => setSelectedKeyHistory(null)} className="text-slate-400 hover:text-white">✕</button>
+              <button onClick={() => setSelectedKeyHistory(null)} className="text-slate-400 hover:text-white p-1">✕</button>
+            </div>
+
+            {/* Quick Actions inside history modal */}
+            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800/80 flex items-center justify-between flex-wrap gap-2">
+              <span className="text-xs text-slate-400 font-medium">Manage this Key:</span>
+              <div className="flex items-center gap-2">
+                {selectedKeyHistory.status === 'BLOCKED' ? (
+                  <button
+                    onClick={() => {
+                      const code = selectedKeyHistory.keyCode;
+                      setSelectedKeyHistory(null);
+                      handleUnblockKey(code);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Unlock className="w-3 h-3" />
+                    Unblock
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      const code = selectedKeyHistory.keyCode;
+                      setSelectedKeyHistory(null);
+                      handleBlockKey(code);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Lock className="w-3 h-3" />
+                    Block Key
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    const code = selectedKeyHistory.keyCode;
+                    setSelectedKeyHistory(null);
+                    handleResetSession(code);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Reset Session
+                </button>
+              </div>
             </div>
 
             <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
@@ -1251,6 +1426,182 @@ export default function AdminAccessKeysTab({ adminSecretKey }: AdminAccessKeysTa
                   <div className="text-[10px] text-slate-500">Actor: {h.actor}</div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* IN-UI ACTION CONFIRMATION MODAL (Block, Unblock, Revoke, Reset, Reject) */}
+      {actionModal.isOpen && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl animate-fadeIn">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-xl ${
+                  actionModal.type === 'block' || actionModal.type === 'revoke' || actionModal.type === 'reject-payment'
+                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                    : actionModal.type === 'unblock'
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                }`}>
+                  {actionModal.type === 'block' && <Lock className="w-5 h-5" />}
+                  {actionModal.type === 'unblock' && <Unlock className="w-5 h-5" />}
+                  {actionModal.type === 'revoke' && <Slash className="w-5 h-5" />}
+                  {actionModal.type === 'reset-session' && <RefreshCw className="w-5 h-5" />}
+                  {actionModal.type === 'reject-payment' && <XCircle className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">{actionModal.title}</h3>
+                  <div className="text-[11px] text-slate-400 font-mono">{actionModal.id}</div>
+                </div>
+              </div>
+              <button
+                onClick={() => setActionModal(prev => ({ ...prev, isOpen: false }))}
+                disabled={actionModal.isProcessing}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Description */}
+            <p className="text-xs text-slate-300 leading-relaxed">
+              {actionModal.description}
+            </p>
+
+            {/* Target identifier badge */}
+            <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400 font-medium">Target Identifier:</span>
+              <code className="text-xs font-mono font-bold text-white bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
+                {actionModal.id}
+              </code>
+            </div>
+
+            {/* Optional Reason Field with Preset Chips */}
+            {actionModal.requiresReason && (
+              <div className="space-y-2">
+                <label className="block text-[11px] font-semibold text-slate-300">
+                  Reason for this action:
+                </label>
+                <input
+                  type="text"
+                  value={actionModal.reason}
+                  onChange={(e) => setActionModal(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Enter reason or choose preset below..."
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
+                  disabled={actionModal.isProcessing}
+                />
+                {actionModal.presetReasons && actionModal.presetReasons.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {actionModal.presetReasons.map((preset, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setActionModal(prev => ({ ...prev, reason: preset }))}
+                        className={`text-[10px] px-2 py-1 rounded-lg border transition-colors cursor-pointer ${
+                          actionModal.reason === preset
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 font-semibold'
+                            : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Error Message if any */}
+            {actionModal.errorMessage && (
+              <div className="p-2.5 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>{actionModal.errorMessage}</span>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setActionModal(prev => ({ ...prev, isOpen: false }))}
+                disabled={actionModal.isProcessing}
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="btn-confirm-action-modal"
+                onClick={handleExecuteAction}
+                disabled={actionModal.isProcessing}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                  actionModal.type === 'block' || actionModal.type === 'revoke' || actionModal.type === 'reject-payment'
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/50'
+                    : actionModal.type === 'unblock'
+                    ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-950/50'
+                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-950/50'
+                }`}
+              >
+                {actionModal.isProcessing ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    {actionModal.type === 'block' && <Lock className="w-3.5 h-3.5" />}
+                    {actionModal.type === 'unblock' && <Unlock className="w-3.5 h-3.5" />}
+                    {actionModal.type === 'revoke' && <Slash className="w-3.5 h-3.5" />}
+                    {actionModal.type === 'reset-session' && <RefreshCw className="w-3.5 h-3.5" />}
+                    {actionModal.type === 'reject-payment' && <XCircle className="w-3.5 h-3.5" />}
+                    <span>
+                      {actionModal.type === 'block' ? 'Confirm & Block' :
+                       actionModal.type === 'unblock' ? 'Confirm & Unblock' :
+                       actionModal.type === 'revoke' ? 'Confirm & Revoke' :
+                       actionModal.type === 'reset-session' ? 'Reset Sessions' :
+                       actionModal.type === 'reject-payment' ? 'Reject Submission' : 'Confirm'}
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: APPROVED PAYMENT SHARE PROMPT */}
+      {paymentApprovedShare && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl animate-fadeIn">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-bold text-white">Payment Approved &amp; Key Generated</h3>
+              </div>
+              <button onClick={() => setPaymentApprovedShare(null)} className="text-slate-400 hover:text-white p-1">✕</button>
+            </div>
+            <p className="text-xs text-slate-300">
+              Access key <strong className="font-mono text-emerald-400">{paymentApprovedShare.keyCode}</strong> has been issued for subscriber <span className="font-mono text-slate-200">{paymentApprovedShare.clientContact}</span>.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                onClick={() => setPaymentApprovedShare(null)}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+              >
+                Dismiss
+              </button>
+              <a
+                href={paymentApprovedShare.waUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setPaymentApprovedShare(null)}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs"
+              >
+                <MessageSquare className="w-4 h-4" />
+                Open WhatsApp &amp; Send Key
+              </a>
             </div>
           </div>
         </div>

@@ -64,7 +64,6 @@ export default function TiltCard({ children, className = '', onClick }: TiltCard
       }}
       transition={{ type: "spring", stiffness: 400, damping: 25 }}
       className={`relative transition-colors duration-200 select-none ${className}`}
-      id="tilt-card-container"
     >
       {/* Perspective wrapper layer */}
       <div 

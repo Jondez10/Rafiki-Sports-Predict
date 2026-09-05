@@ -27,12 +27,11 @@ export default function AdminDashboard({ predictions, articles, notifications, s
   const [isPaymentsLoading, setIsPaymentsLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
 
-  // Master Admin Dashboard Password Gate (Protected by 27885861)
+  // Master Admin Dashboard Password Gate (Server Authoritative)
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
-    const savedKey = localStorage.getItem('rafiki_admin_secret_key');
-    const sessionUnlocked = sessionStorage.getItem('rafiki_admin_unlocked') === 'true';
-    return sessionUnlocked || savedKey === '27885861';
+    return sessionStorage.getItem('rafiki_admin_unlocked') === 'true';
   });
+  const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
@@ -40,12 +39,11 @@ export default function AdminDashboard({ predictions, articles, notifications, s
   
   // Dedicated Admin Password / Secret Key State
   const [adminSecretKey, setAdminSecretKey] = useState<string>(() => {
-    return localStorage.getItem('rafiki_admin_secret_key') || (sessionStorage.getItem('rafiki_admin_unlocked') === 'true' ? '27885861' : '');
+    return localStorage.getItem('rafiki_admin_secret_key') || sessionStorage.getItem('rafiki_admin_secret_key') || '';
   });
   const [showSecretKey, setShowSecretKey] = useState(false);
   const [secretValidationStatus, setSecretValidationStatus] = useState<'idle' | 'testing' | 'valid' | 'invalid'>(() => {
-    const saved = localStorage.getItem('rafiki_admin_secret_key');
-    return (saved === '27885861' || sessionStorage.getItem('rafiki_admin_unlocked') === 'true') ? 'valid' : 'idle';
+    return sessionStorage.getItem('rafiki_admin_unlocked') === 'true' ? 'valid' : 'idle';
   });
   const [secretKeyError, setSecretKeyError] = useState('');
 
@@ -60,17 +58,6 @@ export default function AdminDashboard({ predictions, articles, notifications, s
     setIsLoggingIn(true);
     setLoginError('');
 
-    // Check directly against master password 27885861 or verify with server
-    if (candidate === '27885861' || candidate === 'rafiki-admin-pass' || candidate === 'rafiki2026') {
-      setIsUnlocked(true);
-      setAdminSecretKey(candidate);
-      localStorage.setItem('rafiki_admin_secret_key', candidate);
-      sessionStorage.setItem('rafiki_admin_unlocked', 'true');
-      setSecretValidationStatus('valid');
-      setIsLoggingIn(false);
-      return;
-    }
-
     try {
       const response = await authFetch('/api/admin/verify-secret', {
         method: 'POST',
@@ -78,7 +65,7 @@ export default function AdminDashboard({ predictions, articles, notifications, s
           'Content-Type': 'application/json',
           'X-Admin-Secret': candidate
         },
-        body: JSON.stringify({ adminSecretKey: candidate })
+        body: JSON.stringify({ adminSecretKey: candidate, adminEmail: loginUsername.trim() })
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.success) {
@@ -88,7 +75,7 @@ export default function AdminDashboard({ predictions, articles, notifications, s
         sessionStorage.setItem('rafiki_admin_unlocked', 'true');
         setSecretValidationStatus('valid');
       } else {
-        setLoginError('Access Denied: Incorrect Admin Password.');
+        setLoginError('Access Denied: Incorrect Admin Credentials.');
       }
     } catch {
       setLoginError('Incorrect password. Access denied.');
@@ -531,8 +518,6 @@ export default function AdminDashboard({ predictions, articles, notifications, s
   };
 
   const handleDeletePrediction = (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this prediction?')) return;
-    
     requireAdminAuthorization(`Delete Prediction #${id}`, async () => {
       try {
         const currentKey = adminSecretKey.trim();
@@ -546,12 +531,13 @@ export default function AdminDashboard({ predictions, articles, notifications, s
         });
         if (response.ok) {
           await onRefreshData();
+          setActionMessage(`✅ Prediction #${id} deleted successfully.`);
         } else {
           const errData = await response.json().catch(() => ({}));
-          alert(`Failed to delete prediction: ${errData.message || 'Unauthorized. Check Secret Key.'}`);
+          setActionMessage(`❌ Failed to delete prediction: ${errData.message || 'Unauthorized. Check Secret Key.'}`);
         }
-      } catch (err) {
-        alert('Connectivity error deleting prediction.');
+      } catch (err: any) {
+        setActionMessage(`❌ Error deleting prediction: ${err.message || 'Connectivity error'}`);
       }
     });
   };
@@ -669,7 +655,7 @@ export default function AdminDashboard({ predictions, articles, notifications, s
     });
   };
 
-  // 1. Password Protected Gate Screen (Protected by 27885861)
+  // 1. Password Protected Gate Screen (Protected by Admin Secret Key)
   if (!isUnlocked) {
     return (
       <div className="max-w-xl mx-auto my-8 bg-zinc-900 border border-purple-500/40 rounded-3xl p-6 sm:p-8 shadow-[0_0_40px_rgba(168,85,247,0.15)] space-y-6 text-center" id="admin-password-gate">
@@ -686,16 +672,38 @@ export default function AdminDashboard({ predictions, articles, notifications, s
             Admin Dashboard Protected
           </h2>
           <p className="text-xs sm:text-sm text-gray-400 max-w-md mx-auto leading-relaxed">
-            This area is restricted to authorized platform managers. Please enter the master password to access system controls, live API synchronization, outcome grading, and VIP payment verification.
+            This area is restricted to authorized platform managers. Please enter the administrator username and password to access system controls, live API synchronization, outcome grading, and VIP payment verification.
           </p>
         </div>
 
         <form onSubmit={handleUnlockDashboard} className="space-y-4 text-left">
+          {/* Admin Username / Email */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-gray-300 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                Administrator Username / Email
+              </span>
+              <span className="text-[11px] text-gray-500 font-mono">Verified Admin</span>
+            </label>
+            <input
+              type="email"
+              value={loginUsername}
+              onChange={(e) => {
+                setLoginUsername(e.target.value);
+                setLoginError('');
+              }}
+              placeholder="Enter administrator username / email"
+              className="w-full bg-zinc-950 border border-zinc-750 focus:border-purple-500 rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all"
+            />
+          </div>
+
+          {/* Admin Password */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-gray-300 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
                 <Key className="w-3.5 h-3.5 text-purple-400" />
-                Master Password
+                Administrator Password
               </span>
               <span className="text-[11px] text-gray-500 font-mono">Protected Area</span>
             </label>
@@ -707,7 +715,7 @@ export default function AdminDashboard({ predictions, articles, notifications, s
                   setLoginPassword(e.target.value);
                   setLoginError('');
                 }}
-                placeholder="Enter password (e.g. 27885861)"
+                placeholder="Enter password"
                 autoFocus
                 className="w-full bg-zinc-950 border border-zinc-750 focus:border-purple-500 rounded-xl px-4 py-3 text-sm text-white font-mono placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500/20 pr-12 transition-all"
               />
@@ -1054,7 +1062,7 @@ export default function AdminDashboard({ predictions, articles, notifications, s
                   type={showSecretKey ? 'text' : 'password'}
                   value={adminSecretKey}
                   onChange={(e) => handleSecretKeyChange(e.target.value)}
-                  placeholder="Enter Master Admin Secret Key (e.g. from ADMIN_SECRET_KEY in .env)"
+                  placeholder="Enter Master Admin Secret Key"
                   className="w-full bg-zinc-900/90 border border-zinc-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white placeholder-gray-500 font-mono transition-all outline-none"
                 />
                 <button
@@ -1091,7 +1099,7 @@ export default function AdminDashboard({ predictions, articles, notifications, s
                 <div>
                   <div className="font-bold">{secretKeyError}</div>
                   <div className="text-[11px] text-rose-400/80 mt-0.5">
-                    Ensure your key matches <code>ADMIN_SECRET_KEY</code> in environment variables or default master keys (e.g. <code>rafiki-admin-pass</code>).
+                    Ensure your key matches <code>ADMIN_SECRET_KEY</code> in your environment variables.
                   </div>
                 </div>
               </div>
@@ -1719,7 +1727,7 @@ export default function AdminDashboard({ predictions, articles, notifications, s
             </h4>
             
             <p className="text-xs text-gray-500 leading-relaxed">
-              Every checkout logged via M-Pesa (Till 6881472 / Send Money 0716483642), Airtel Money (0735309361), Telkom T-Kash (0773266691), Equity Bank (0620187419406), Payoneer/Pesapal/Skrill (johnmushira@gmail.com), or Visa Card (4478 **** **** 9885) is verifiably logged below in real-time. Simulated logs are instantly approved for sandbox testing, updating the user profile.
+              Every checkout logged via M-Pesa (Till 6881472 - John Mushira / Send Money 0716483642), Airtel Money (0735309361), Telkom T-Kash (0773266691), Equity Bank (0620187419406), Payoneer/Pesapal/Skrill (johnmushira@gmail.com), or Visa Card (4478 **** **** 9885) is verifiably logged below in real-time. Simulated logs are instantly approved for sandbox testing, updating the user profile.
             </p>
 
             <div className="text-xs text-gray-400 text-center py-4 bg-zinc-900/40 rounded-xl border border-dashed border-zinc-800">

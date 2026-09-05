@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
-import { Sparkles, Trophy, TrendingUp, ShieldCheck, Flame, ArrowRight, Zap, Target, Download, Check, Image as ImageIcon } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import React from 'react';
+import { Sparkles, Trophy, TrendingUp, ShieldCheck, Flame, ArrowRight, Zap, Target } from 'lucide-react';
+import { motion } from 'motion/react';
 import { APP_LOGO, APP_BANNER } from '../assets';
-import { downloadImageFile } from '../utils/exportHelpers';
 
 interface AppBannerProps {
   onExploreClick: () => void;
@@ -19,37 +18,6 @@ export default function AppBanner({
   theme,
   isVip = false
 }: AppBannerProps) {
-  const [isExporting, setIsExporting] = useState<'banner' | 'logo' | null>(null);
-  const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
-
-  const handleExportBanner = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsExporting('banner');
-    try {
-      await downloadImageFile(APP_BANNER, `rafiki_predict_official_banner.jpg`);
-      setDownloadSuccess(language === 'en' ? 'Banner exported!' : 'Bango limepakuliwa!');
-      setTimeout(() => setDownloadSuccess(null), 3000);
-    } catch {
-      // ignore
-    } finally {
-      setIsExporting(null);
-    }
-  };
-
-  const handleExportLogo = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsExporting('logo');
-    try {
-      await downloadImageFile(APP_LOGO, `rafiki_predict_official_logo.jpg`);
-      setDownloadSuccess(language === 'en' ? 'Logo exported!' : 'Nembo imepakuliwa!');
-      setTimeout(() => setDownloadSuccess(null), 3000);
-    } catch {
-      // ignore
-    } finally {
-      setIsExporting(null);
-    }
-  };
-
   return (
     <div 
       className={`relative rounded-3xl overflow-hidden mb-8 border transition-all duration-300 shadow-2xl ${
@@ -87,38 +55,7 @@ export default function AppBanner({
               <Flame className="w-3.5 h-3.5 text-amber-400 fill-amber-400/30" />
               <span>{language === 'en' ? 'SMART PICKS • BIG WINS' : 'UTABIRI BORA • USHINDI MKUBWA'}</span>
             </div>
-
-            {/* Export Brand Assets Pill */}
-            <div className="inline-flex items-center gap-1.5 ml-auto">
-              <button
-                type="button"
-                onClick={handleExportBanner}
-                disabled={isExporting !== null}
-                className="inline-flex items-center gap-1 px-2.5 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/80 text-gray-300 hover:text-white rounded-lg text-[11px] font-mono cursor-pointer transition-all active:scale-95"
-                title={language === 'en' ? 'Export High-Resolution Banner' : 'Hamisha Bango lenye ubora wa juu'}
-              >
-                <Download className="w-3 h-3 text-emerald-400" />
-                <span>{language === 'en' ? 'Export Banner' : 'Hamisha Bango'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleExportLogo}
-                disabled={isExporting !== null}
-                className="inline-flex items-center gap-1 px-2.5 py-1 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/80 text-gray-300 hover:text-white rounded-lg text-[11px] font-mono cursor-pointer transition-all active:scale-95"
-                title={language === 'en' ? 'Export High-Resolution Logo' : 'Hamisha Nembo'}
-              >
-                <ImageIcon className="w-3 h-3 text-teal-400" />
-                <span>{language === 'en' ? 'Export Logo' : 'Hamisha Nembo'}</span>
-              </button>
-            </div>
           </div>
-
-          {downloadSuccess && (
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 rounded-lg text-xs font-mono animate-fadeIn">
-              <Check className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{downloadSuccess}</span>
-            </div>
-          )}
 
           {/* Main Hero Slogan & Headline */}
           <div className="space-y-2">

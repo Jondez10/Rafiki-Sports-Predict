@@ -5,17 +5,6 @@ import { translations } from '../translations';
 import { db, auth } from '../lib/firebase';
 import { collection, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { 
-  ResponsiveContainer, 
-  BarChart, 
-  Bar, 
-  Cell, 
-  Tooltip, 
-  XAxis, 
-  YAxis,
-  LineChart,
-  Line
-} from 'recharts';
-import { 
   Trophy, 
   Flame, 
   Activity, 
@@ -111,6 +100,82 @@ const getHistoricalProbabilityData = (predId: string, currentProbability: number
   }
   return data;
 };
+
+interface ProbabilitySparklineProps {
+  predId: string;
+  currentProbability: number;
+}
+
+const ProbabilitySparkline: React.FC<ProbabilitySparklineProps> = React.memo(({ predId, currentProbability }) => {
+  const [hoveredPoint, setHoveredPoint] = useState<{ matchNum: number; val: number } | null>(null);
+
+  const history = React.useMemo(() => {
+    return getHistoricalProbabilityData(predId, currentProbability);
+  }, [predId, currentProbability]);
+
+  const width = 110;
+  const height = 22;
+  const padX = 4;
+  const padY = 4;
+
+  const probs = history.map(d => d.probability);
+  const minProb = Math.min(...probs) - 4;
+  const maxProb = Math.max(...probs) + 4;
+  const range = maxProb - minProb || 1;
+
+  const points = history.map((d, i) => {
+    const x = padX + (i / (history.length - 1)) * (width - 2 * padX);
+    const y = height - padY - ((d.probability - minProb) / range) * (height - 2 * padY);
+    return { x, y, matchNum: d.matchNum, val: d.probability };
+  });
+
+  const pathD = points.reduce((acc, pt, idx) => {
+    return idx === 0 ? `M ${pt.x} ${pt.y}` : `${acc} L ${pt.x} ${pt.y}`;
+  }, '');
+
+  const firstVal = history[0]?.probability || currentProbability;
+  const lastVal = history[history.length - 1]?.probability || currentProbability;
+  const isUp = lastVal >= firstVal;
+  const strokeColor = isUp ? '#10b981' : '#f59e0b';
+
+  return (
+    <div className="relative flex items-center justify-end select-none shrink-0">
+      <svg 
+        width={width} 
+        height={height} 
+        className="overflow-visible cursor-pointer"
+        onMouseLeave={() => setHoveredPoint(null)}
+      >
+        <path
+          d={pathD}
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {points.map((pt, i) => (
+          <circle
+            key={i}
+            cx={pt.x}
+            cy={pt.y}
+            r={i === points.length - 1 ? 2.5 : 1.5}
+            fill={i === points.length - 1 ? strokeColor : '#71717a'}
+            className="transition-all hover:r-3 cursor-pointer"
+            onMouseEnter={() => setHoveredPoint({ matchNum: pt.matchNum, val: pt.val })}
+          />
+        ))}
+      </svg>
+      {hoveredPoint && (
+        <div 
+          className="absolute -top-7 right-0 pointer-events-none bg-zinc-950 border border-zinc-800 text-[10px] px-2 py-0.5 rounded-md font-mono text-white shadow-xl z-20 whitespace-nowrap"
+        >
+          Match {hoveredPoint.matchNum}: <span className="text-emerald-400 font-bold">{hoveredPoint.val}%</span>
+        </div>
+      )}
+    </div>
+  );
+});
 
 const getRiskInfo = (odds: number, injuryImpact?: string, t?: any) => {
   const translations = t || { riskLevel: "Risk Level", low: "Low", medium: "Medium", high: "High" };
@@ -241,57 +306,49 @@ export default function PredictionsTab({
   };
 
   const handleToggleLeagueSubscription = (league: string) => {
-    setSubscribedLeagues(prev => {
-      const isSubscribed = prev.includes(league);
-      let updated;
-      if (isSubscribed) {
-        updated = prev.filter(l => l !== league);
-        addToast({
-          title: language === 'en' ? 'Unsubscribed' : 'Umejiondoa',
-          message: language === 'en' 
-            ? `You will no longer receive alerts for ${league}.` 
-            : `Hutapokea tena arifa za ${league}.`,
-          type: 'info'
-        });
-      } else {
-        updated = [...prev, league];
-        addToast({
-          title: language === 'en' ? 'Subscribed!' : 'Umejiunga!',
-          message: language === 'en' 
-            ? `You will now receive alerts whenever new ${league} predictions are posted.` 
-            : `Sasa utapokea arifa wakati wowote utabiri mpya wa ${league} unapowekwa.`,
-          type: 'success'
-        });
-      }
-      return updated;
-    });
+    const isSubscribed = subscribedLeagues.includes(league);
+    if (isSubscribed) {
+      setSubscribedLeagues(prev => prev.filter(l => l !== league));
+      addToast({
+        title: language === 'en' ? 'Unsubscribed' : 'Umejiondoa',
+        message: language === 'en' 
+          ? `You will no longer receive alerts for ${league}.` 
+          : `Hutapokea tena arifa za ${league}.`,
+        type: 'info'
+      });
+    } else {
+      setSubscribedLeagues(prev => [...prev, league]);
+      addToast({
+        title: language === 'en' ? 'Subscribed!' : 'Umejiunga!',
+        message: language === 'en' 
+          ? `You will now receive alerts whenever new ${league} predictions are posted.` 
+          : `Sasa utapokea arifa wakati wowote utabiri mpya wa ${league} unapowekwa.`,
+        type: 'success'
+      });
+    }
   };
 
   const handleToggleTeamSubscription = (team: string, league?: string) => {
-    setSubscribedTeams(prev => {
-      const isSubscribed = prev.includes(team);
-      let updated;
-      if (isSubscribed) {
-        updated = prev.filter(t => t !== team);
-        addToast({
-          title: language === 'en' ? 'Unsubscribed' : 'Umejiondoa',
-          message: language === 'en' 
-            ? `You will no longer receive alerts for ${team}.` 
-            : `Hutapokea tena arifa za ${team}.`,
-          type: 'info'
-        });
-      } else {
-        updated = [...prev, team];
-        addToast({
-          title: language === 'en' ? 'Subscribed!' : 'Umejiunga!',
-          message: language === 'en' 
-            ? `You will now receive alerts whenever new ${team}${league ? ` (${league})` : ''} predictions are posted.` 
-            : `Sasa utapokea arifa wakati wowote utabiri mpya wa ${team} unapowekwa.`,
-          type: 'success'
-        });
-      }
-      return updated;
-    });
+    const isSubscribed = subscribedTeams.includes(team);
+    if (isSubscribed) {
+      setSubscribedTeams(prev => prev.filter(t => t !== team));
+      addToast({
+        title: language === 'en' ? 'Unsubscribed' : 'Umejiondoa',
+        message: language === 'en' 
+          ? `You will no longer receive alerts for ${team}.` 
+          : `Hutapokea tena arifa za ${team}.`,
+        type: 'info'
+      });
+    } else {
+      setSubscribedTeams(prev => [...prev, team]);
+      addToast({
+        title: language === 'en' ? 'Subscribed!' : 'Umejiunga!',
+        message: language === 'en' 
+          ? `You will now receive alerts whenever new ${team}${league ? ` (${league})` : ''} predictions are posted.` 
+          : `Sasa utapokea arifa wakati wowote utabiri mpya wa ${team} unapowekwa.`,
+        type: 'success'
+      });
+    }
   };
 
   const handleSubscribeAllFiltered = (leaguesToSub: string[], teamsToSub: string[]) => {
@@ -611,6 +668,23 @@ export default function PredictionsTab({
 
   const isUnlocked = isPremium || isTrial || isAdmin || isGuestValid || accessKeySession.isActive;
 
+  // 5 Free Daily Games Quota:
+  // For non-paying users, exactly 5 active daily matches are provided with full analysis & picks for free.
+  // For VIP/paid/trial users, all matches are unlocked.
+  const freeDailyPredictionIds = React.useMemo(() => {
+    const activePreds = allPredictions.filter(p => !p.id.startsWith('p-hist-'));
+    const sorted = [...activePreds].sort((a, b) => {
+      if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+      return a.id.localeCompare(b.id);
+    });
+    return new Set(sorted.slice(0, 5).map(p => p.id));
+  }, [allPredictions]);
+
+  // Helper function to check if a specific prediction is unlocked
+  const isPredictionUnlocked = React.useCallback((predictionId: string) => {
+    return isUnlocked || freeDailyPredictionIds.has(predictionId);
+  }, [isUnlocked, freeDailyPredictionIds]);
+
   // Comprehensive extraction of available leagues with metadata & participating teams
   const availableLeaguesData = React.useMemo(() => {
     const activePreds = allPredictions.filter(p => !p.id.startsWith('p-hist-'));
@@ -759,58 +833,62 @@ export default function PredictionsTab({
   }, [allPredictions, subscribedLeagues, subscribedTeams, language]);
 
   // Filter and sort single matches
-  const filteredPredictions = allPredictions
-    .filter(p => {
-      // Only show active predictions (not historical completed logs)
-      if (p.id.startsWith('p-hist-')) return false;
-      
-      // Sport Filter
-      const matchesSport = sportFilter === 'all' || p.match.sport === sportFilter;
-      if (!matchesSport) return false;
+  const filteredPredictions = React.useMemo(() => {
+    return allPredictions
+      .filter(p => {
+        // Only show active predictions (not historical completed logs)
+        if (p.id.startsWith('p-hist-')) return false;
+        
+        // Sport Filter
+        const matchesSport = sportFilter === 'all' || p.match.sport === sportFilter;
+        if (!matchesSport) return false;
 
-      // Search Query Filter
-      if (searchQuery.trim() !== '') {
-        const query = searchQuery.toLowerCase().trim();
-        const homeTeam = p.match.homeTeam.toLowerCase();
-        const awayTeam = p.match.awayTeam.toLowerCase();
-        const league = p.match.league.toLowerCase();
-        return homeTeam.includes(query) || awayTeam.includes(query) || league.includes(query);
-      }
+        // Search Query Filter
+        if (searchQuery.trim() !== '') {
+          const query = searchQuery.toLowerCase().trim();
+          const homeTeam = p.match.homeTeam.toLowerCase();
+          const awayTeam = p.match.awayTeam.toLowerCase();
+          const league = p.match.league.toLowerCase();
+          return homeTeam.includes(query) || awayTeam.includes(query) || league.includes(query);
+        }
 
-      return true;
-    })
-    .sort((a, b) => {
-      if (sortBy === 'confidence') {
-        return b.confidence - a.confidence; // Highest confidence score first
-      }
-      if (sortBy === 'odds-desc') {
-        return b.odds - a.odds; // Highest odds first
-      }
-      if (sortBy === 'odds-asc') {
-        return a.odds - b.odds; // Lowest odds first
-      }
-      if (sortBy === 'date' || sortBy === 'date-soonest') {
-        const dateA = new Date(a.match.startTime).getTime();
-        const dateB = new Date(b.match.startTime).getTime();
-        if (dateA !== dateB) return dateA - dateB; // Soonest kickoff first
-        return a.id.localeCompare(b.id);
-      }
-      if (sortBy === 'date-latest') {
-        const dateA = new Date(a.match.startTime).getTime();
-        const dateB = new Date(b.match.startTime).getTime();
-        if (dateA !== dateB) return dateB - dateA; // Latest kickoff first
-        return a.id.localeCompare(b.id);
-      }
-      if (sortBy === 'league') {
-        return a.match.league.localeCompare(b.match.league); // League alphabetically
-      }
-      return 0;
-    });
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'confidence') {
+          return b.confidence - a.confidence; // Highest confidence score first
+        }
+        if (sortBy === 'odds-desc') {
+          return b.odds - a.odds; // Highest odds first
+        }
+        if (sortBy === 'odds-asc') {
+          return a.odds - b.odds; // Lowest odds first
+        }
+        if (sortBy === 'date' || sortBy === 'date-soonest') {
+          const dateA = new Date(a.match.startTime).getTime();
+          const dateB = new Date(b.match.startTime).getTime();
+          if (dateA !== dateB) return dateA - dateB; // Soonest kickoff first
+          return a.id.localeCompare(b.id);
+        }
+        if (sortBy === 'date-latest') {
+          const dateA = new Date(a.match.startTime).getTime();
+          const dateB = new Date(b.match.startTime).getTime();
+          if (dateA !== dateB) return dateB - dateA; // Latest kickoff first
+          return a.id.localeCompare(b.id);
+        }
+        if (sortBy === 'league') {
+          return a.match.league.localeCompare(b.match.league); // League alphabetically
+        }
+        return 0;
+      });
+  }, [allPredictions, sportFilter, searchQuery, sortBy]);
 
   // Highlight top-trending bets across all sports (e.g., top 3 by confidence or expected value)
-  const trendingTips = [...allPredictions.filter(p => !p.id.startsWith('p-hist-'))]
-    .sort((a, b) => b.confidence - a.confidence)
-    .slice(0, 3);
+  const trendingTips = React.useMemo(() => {
+    return [...allPredictions.filter(p => !p.id.startsWith('p-hist-'))]
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 3);
+  }, [allPredictions]);
 
   return (
     <div className="space-y-10" id="predictions-section">
@@ -2025,7 +2103,10 @@ export default function PredictionsTab({
           </div>
 
           <div className="grid md:grid-cols-3 gap-6">
-            {trendingTips.map((tip) => (
+            {trendingTips.map((tip) => {
+              const isTipUnlocked = isPredictionUnlocked(tip.id);
+              const isFreeSpotlight = !isUnlocked && freeDailyPredictionIds.has(tip.id);
+              return (
               <TiltCard 
                 key={`trending-${tip.id}`}
                 className="bg-zinc-900 border border-zinc-800/80 hover:border-emerald-500/20 rounded-2xl p-5 relative overflow-hidden group cursor-pointer"
@@ -2036,6 +2117,15 @@ export default function PredictionsTab({
                       <span className="text-[10px] bg-emerald-950/60 text-emerald-400 font-mono font-bold px-2 py-0.5 rounded border border-emerald-900/40 uppercase tracking-wider">
                         {tip.match.sport} • {tip.match.league}
                       </span>
+                      {isFreeSpotlight ? (
+                        <span className="text-[8px] bg-emerald-950/90 text-emerald-300 font-mono font-bold px-1.5 py-0.5 rounded border border-emerald-500/40 flex items-center gap-1">
+                          🎁 {t.freeDailyBadgeProgress || "Free Pick"}
+                        </span>
+                      ) : !isTipUnlocked ? (
+                        <span className="text-[8px] bg-amber-950/80 text-amber-400 font-mono font-bold px-1.5 py-0.5 rounded border border-amber-500/30 flex items-center gap-1">
+                          <Lock className="w-2.5 h-2.5" /> VIP
+                        </span>
+                      ) : null}
                       {tip.dataSource === 'statistical-engine' && (
                         <span className="text-[8px] bg-emerald-950/80 text-emerald-300 font-mono font-bold px-1.5 py-0.5 rounded border border-emerald-800/60">
                           📊 Poisson
@@ -2053,7 +2143,7 @@ export default function PredictionsTab({
                         );
                       })()}
                       <span className="text-[10px] font-mono text-amber-400 font-semibold bg-amber-950/20 px-2 py-0.5 rounded">
-                        🔥 {tip.confidence}% Conf
+                        {isTipUnlocked ? `🔥 ${tip.confidence}% Conf` : '🔒 VIP Conf'}
                       </span>
                       
                       {/* Bookmark Icon Button */}
@@ -2079,7 +2169,7 @@ export default function PredictionsTab({
                       <h4 className="text-sm font-bold text-white font-sans truncate">
                         {tip.match.homeTeam} vs {tip.match.awayTeam}
                       </h4>
-                      {isUnlocked ? (
+                      {isTipUnlocked ? (
                         <p className="text-xs text-gray-400 mt-1 line-clamp-2 min-h-[2rem] leading-relaxed">
                           {tip.aiExplanation}
                         </p>
@@ -2107,10 +2197,10 @@ export default function PredictionsTab({
                             cx="18"
                             cy="18"
                             r="15"
-                            className="text-emerald-400 transition-all duration-500 ease-out"
+                            className={isTipUnlocked ? "text-emerald-400 transition-all duration-500 ease-out" : "text-zinc-700"}
                             strokeWidth="3.5"
                             strokeDasharray="94.25"
-                            strokeDashoffset={94.25 - (94.25 * tip.confidence) / 100}
+                            strokeDashoffset={isTipUnlocked ? 94.25 - (94.25 * tip.confidence) / 100 : 94.25}
                             strokeLinecap="round"
                             stroke="currentColor"
                             fill="transparent"
@@ -2118,7 +2208,7 @@ export default function PredictionsTab({
                         </svg>
                         <div className="absolute inset-0 flex items-center justify-center">
                           <span className="text-[10px] font-mono font-bold text-white leading-none">
-                            {tip.confidence}%
+                            {isTipUnlocked ? `${tip.confidence}%` : '🔒'}
                           </span>
                         </div>
                       </div>
@@ -2135,18 +2225,28 @@ export default function PredictionsTab({
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
                         {t.winProbability || "Win Probability"}
                       </span>
-                      <span className="font-bold text-emerald-400 font-mono flex items-center gap-1 bg-emerald-950/40 border border-emerald-900/30 px-1.5 py-0.5 rounded text-[10px]">
-                        {tip.probability || tip.confidence}%
-                      </span>
+                      {isTipUnlocked ? (
+                        <span className="font-bold text-emerald-400 font-mono flex items-center gap-1 bg-emerald-950/40 border border-emerald-900/30 px-1.5 py-0.5 rounded text-[10px]">
+                          {tip.probability || tip.confidence}%
+                        </span>
+                      ) : (
+                        <span className="font-bold text-amber-400 font-mono flex items-center gap-1 bg-amber-950/40 border border-amber-900/30 px-1.5 py-0.5 rounded text-[10px]">
+                          <Lock className="w-2.5 h-2.5" /> VIP
+                        </span>
+                      )}
                     </div>
                     <div className="w-full h-2 bg-zinc-950 border border-zinc-900 rounded-full overflow-hidden p-[1px] relative">
-                      <div 
-                        className="h-full rounded-full bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-400 transition-all duration-500 relative"
-                        style={{ width: `${tip.probability || tip.confidence}%` }}
-                      >
-                        {/* Glow effect at the tip of the progress bar */}
-                        <span className="absolute right-0 top-0 bottom-0 w-2 bg-white/40 rounded-full blur-[1px] animate-pulse" />
-                      </div>
+                      {isTipUnlocked ? (
+                        <div 
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-400 transition-all duration-500 relative"
+                          style={{ width: `${tip.probability || tip.confidence}%` }}
+                        >
+                          {/* Glow effect at the tip of the progress bar */}
+                          <span className="absolute right-0 top-0 bottom-0 w-2 bg-white/40 rounded-full blur-[1px] animate-pulse" />
+                        </div>
+                      ) : (
+                        <div className="h-full rounded-full bg-zinc-800 w-1/3 opacity-40" />
+                      )}
                     </div>
 
                     {/* Momentum Sparkline Line Chart */}
@@ -2158,46 +2258,25 @@ export default function PredictionsTab({
                           {language === 'sw' ? 'Kasi' : 'Momentum'}
                         </span>
                       </div>
-                      <div className="h-10 w-full bg-zinc-950/40 border border-zinc-900 rounded-xl p-2 flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="text-[10px] font-mono text-zinc-500">
-                            {getHistoricalProbabilityData(tip.id, tip.probability || tip.confidence)[0].probability}%
-                          </span>
-                          <span className="text-[10px] text-zinc-600 font-mono">→</span>
-                          <span className="text-[10px] font-mono font-extrabold text-emerald-400">
-                            {tip.probability || tip.confidence}%
-                          </span>
+                      {isTipUnlocked ? (
+                        <div className="h-10 w-full bg-zinc-950/40 border border-zinc-900 rounded-xl p-2 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-[10px] font-mono text-zinc-500">
+                              {getHistoricalProbabilityData(tip.id, tip.probability || tip.confidence)[0].probability}%
+                            </span>
+                            <span className="text-[10px] text-zinc-600 font-mono">→</span>
+                            <span className="text-[10px] font-mono font-extrabold text-emerald-400">
+                              {tip.probability || tip.confidence}%
+                            </span>
+                          </div>
+                          <ProbabilitySparkline predId={tip.id} currentProbability={tip.probability || tip.confidence} />
                         </div>
-                        <div className="h-full flex-grow max-w-[140px]">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={getHistoricalProbabilityData(tip.id, tip.probability || tip.confidence)}>
-                              <XAxis dataKey="match" hide />
-                              <YAxis domain={['dataMin - 5', 'dataMax + 5']} hide />
-                              <Tooltip
-                                cursor={false}
-                                content={({ active, payload }) => {
-                                  if (active && payload && payload.length) {
-                                    return (
-                                      <div className="bg-zinc-950 border border-zinc-850 text-[10px] px-2 py-1 rounded-lg font-mono text-white shadow-2xl">
-                                        Match {payload[0].payload.matchNum}: <span className="text-emerald-400 font-bold">{payload[0].value}%</span>
-                                      </div>
-                                    );
-                                  }
-                                  return null;
-                                }}
-                              />
-                              <Line 
-                                type="monotone" 
-                                dataKey="probability" 
-                                stroke="#10b981" 
-                                strokeWidth={2} 
-                                dot={{ r: 2.5, stroke: '#10b981', strokeWidth: 1, fill: '#09090b' }}
-                                activeDot={{ r: 3.5, stroke: '#10b981', strokeWidth: 1.5, fill: '#10b981' }}
-                              />
-                            </LineChart>
-                          </ResponsiveContainer>
+                      ) : (
+                        <div className="h-10 w-full bg-zinc-950/40 border border-zinc-900 rounded-xl p-2 flex items-center justify-center text-[10px] font-mono text-amber-400 gap-1.5">
+                          <Lock className="w-3.5 h-3.5 text-amber-400" />
+                          <span>{language === 'sw' ? 'Mwelekeo wa ushindi umefungwa' : 'Win momentum locked (VIP)'}</span>
                         </div>
-                      </div>
+                      )}
                     </div>
 
                     {/* Expert Insight Panel */}
@@ -2207,7 +2286,7 @@ export default function PredictionsTab({
                           <Sparkles className="w-3 h-3 text-emerald-400 shrink-0 animate-pulse" />
                           <span>{t.expertInsight || "Expert AI Insight"}</span>
                         </div>
-                        {isUnlocked ? (
+                        {isTipUnlocked ? (
                           <div className="bg-zinc-950/40 border border-zinc-850/60 p-2.5 rounded-xl space-y-1.5 text-[10.5px] leading-relaxed text-gray-300 font-sans">
                             <div>
                               <span className="text-emerald-400 font-bold mr-1">{language === 'sw' ? 'Fomu:' : 'Form:'}</span>
@@ -2235,7 +2314,7 @@ export default function PredictionsTab({
 
                 <div className="border-t border-zinc-800/80 pt-4 flex justify-between items-center gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    {isUnlocked && (
+                    {isTipUnlocked && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -2259,7 +2338,7 @@ export default function PredictionsTab({
                       <span className="text-[10px] text-gray-500 truncate">
                         Selection {tip.modelFairOdds ? '• Fair Odds' : ''}
                       </span>
-                      {isUnlocked ? (
+                      {isTipUnlocked ? (
                         <span className="text-xs font-bold text-emerald-400 truncate" title={tip.pick}>
                           {tip.pick} <span className={getOddsColorClass(tip.modelFairOdds || tip.odds, "text-white")}>@{(tip.modelFairOdds || tip.odds).toFixed(2)}</span>
                         </span>
@@ -2321,7 +2400,7 @@ export default function PredictionsTab({
 
                     <button
                       onClick={(e) => {
-                        if (!isUnlocked) {
+                        if (!isTipUnlocked) {
                           e.stopPropagation();
                           onNavigateToBilling();
                           return;
@@ -2329,15 +2408,15 @@ export default function PredictionsTab({
                         togglePredictionSelection(tip, e);
                       }}
                       className={`text-xs font-sans font-semibold py-2 px-2.5 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                        !isUnlocked
+                        !isTipUnlocked
                           ? 'bg-zinc-950 hover:bg-zinc-900 border-zinc-800 text-amber-400'
                           : selectedPredictionIds.includes(tip.id)
                           ? 'bg-emerald-500 text-black border-emerald-400 font-bold shadow-md shadow-emerald-500/20'
                           : 'bg-zinc-950 hover:bg-zinc-900 border-zinc-800 text-gray-200 hover:border-emerald-500/50 hover:text-emerald-400'
                       }`}
-                      title={!isUnlocked ? "Unlock to add to betslip" : (selectedPredictionIds.includes(tip.id) ? (language === 'sw' ? "Ondoa kwenye jamvi" : "Remove from custom betslip") : (language === 'sw' ? "Weka kwenye kibandiko cha dau (+)" : "Add to custom betslip builder (+)"))}
+                      title={!isTipUnlocked ? "Unlock to add to betslip" : (selectedPredictionIds.includes(tip.id) ? (language === 'sw' ? "Ondoa kwenye jamvi" : "Remove from custom betslip") : (language === 'sw' ? "Weka kwenye kibandiko cha dau (+)" : "Add to custom betslip builder (+)"))}
                     >
-                      {!isUnlocked ? (
+                      {!isTipUnlocked ? (
                         <>
                           <Lock className="w-3.5 h-3.5 text-amber-400" />
                           <span>VIP Bet</span>
@@ -2365,7 +2444,8 @@ export default function PredictionsTab({
                   </div>
                 </div>
               </TiltCard>
-            ))}
+            );
+          })}
           </div>
         </div>
       )}
@@ -2450,6 +2530,58 @@ export default function PredictionsTab({
           </div>
         </div>
 
+        {/* 5 Free Daily Games Quota Status Banner */}
+        <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+          isUnlocked
+            ? 'bg-gradient-to-r from-emerald-950/40 via-zinc-900/60 to-emerald-950/30 border-emerald-500/30 shadow-lg'
+            : 'bg-gradient-to-r from-amber-950/30 via-zinc-900/80 to-emerald-950/30 border-amber-500/30 shadow-lg'
+        }`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-lg border ${
+                isUnlocked
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+              }`}>
+                {isUnlocked ? '👑' : '🎁'}
+              </div>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-sm font-bold text-white font-sans flex items-center gap-1.5">
+                    {isUnlocked 
+                      ? (t.vipUnlockedBannerTitle || 'VIP Premium Active') 
+                      : (t.freeDailyBannerTitle || '5 Free Daily AI Predictions Active')}
+                  </h4>
+                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                    isUnlocked
+                      ? 'bg-emerald-950 text-emerald-400 border-emerald-800'
+                      : 'bg-amber-950 text-amber-300 border-amber-800'
+                  }`}>
+                    {isUnlocked ? 'ALL UNLOCKED' : '5 / 5 FREE PICKS'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-300 max-w-xl leading-relaxed">
+                  {isUnlocked
+                    ? (t.vipUnlockedBannerDesc || 'All match predictions, 5-model ensemble metrics, and high-value accumulators are fully unlocked!')
+                    : (t.freeDailyBannerDesc || "You have full access to analysis and picks for 5 spotlight matches today! Upgrade to VIP to unlock all remaining matches and accumulators.")}
+                </p>
+              </div>
+            </div>
+
+            {!isUnlocked && (
+              <button
+                type="button"
+                onClick={onNavigateToBilling}
+                className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black text-xs font-bold rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-1.5 shrink-0 self-start sm:self-center active:scale-95"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{t.unlockAllMatches || 'Unlock All Matches'}</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* List of individual match prediction cards */}
         <div className={`grid ${displayDensity === 'compact' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3' : 'grid-cols-1 md:grid-cols-2 gap-5'}`}>
           {filteredPredictions.length === 0 ? (
@@ -2467,7 +2599,11 @@ export default function PredictionsTab({
               </p>
             </div>
           ) : (
-            filteredPredictions.map((pred) => (
+            filteredPredictions.map((pred) => {
+              const isPredUnlocked = isPredictionUnlocked(pred.id);
+              const isFreeSpotlight = !isUnlocked && freeDailyPredictionIds.has(pred.id);
+
+              return (
               <TiltCard 
                 key={pred.id}
                 onClick={() => setSelectedPrediction(pred)}
@@ -2479,6 +2615,15 @@ export default function PredictionsTab({
                       <span className="text-[10px] bg-zinc-950 text-emerald-400 font-mono font-bold px-2 py-0.5 rounded border border-zinc-800 uppercase">
                         {pred.match.sport}
                       </span>
+                      {isFreeSpotlight ? (
+                        <span className="text-[9px] bg-emerald-950/90 text-emerald-300 font-mono font-bold px-2 py-0.5 rounded-full border border-emerald-500/40 flex items-center gap-1 shadow-sm">
+                          🎁 {t.freeDailyBadgeProgress || "Free Pick"}
+                        </span>
+                      ) : !isPredUnlocked ? (
+                        <span className="text-[9px] bg-amber-950/80 text-amber-400 font-mono font-bold px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1">
+                          <Lock className="w-2.5 h-2.5" /> VIP Match
+                        </span>
+                      ) : null}
                       {pred.dataSource === 'statistical-engine' ? (
                         <span className="text-[9px] bg-emerald-950/80 text-emerald-300 font-mono font-bold px-1.5 py-0.5 rounded border border-emerald-800/60 flex items-center gap-1" title="Computed via Poisson distribution from verified match results">
                           📊 Poisson Engine
@@ -2503,7 +2648,7 @@ export default function PredictionsTab({
                         className={`p-1 rounded-lg transition-all active:scale-95 cursor-pointer flex items-center justify-center border ${
                           subscribedLeagues.includes(pred.match.league)
                             ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
-                            : 'bg-zinc-950/60 border-zinc-850/80 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
+                            : 'bg-zinc-950/60 border-zinc-855/80 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
                         }`}
                         title={subscribedLeagues.includes(pred.match.league) ? 'Unsubscribe from league' : 'Subscribe to league'}
                       >
@@ -2596,7 +2741,7 @@ export default function PredictionsTab({
                           )}
                         </button>
                       </h4>
-                      {isUnlocked ? (
+                      {isPredUnlocked ? (
                         <p className="text-xs text-gray-400 mt-1 line-clamp-2 leading-relaxed">
                           {pred.aiExplanation}
                         </p>
@@ -2624,10 +2769,10 @@ export default function PredictionsTab({
                             cx="18"
                             cy="18"
                             r="15"
-                            className="text-emerald-400 transition-all duration-500 ease-out"
+                            className={isPredUnlocked ? "text-emerald-400 transition-all duration-500 ease-out" : "text-zinc-700"}
                             strokeWidth="3.5"
                             strokeDasharray="94.25"
-                            strokeDashoffset={94.25 - (94.25 * pred.confidence) / 100}
+                            strokeDashoffset={isPredUnlocked ? 94.25 - (94.25 * pred.confidence) / 100 : 94.25}
                             strokeLinecap="round"
                             stroke="currentColor"
                             fill="transparent"
@@ -2635,7 +2780,7 @@ export default function PredictionsTab({
                         </svg>
                         <div className="absolute inset-0 flex items-center justify-center">
                           <span className="text-[11px] font-mono font-extrabold text-white leading-none">
-                            {pred.confidence}%
+                            {isPredUnlocked ? `${pred.confidence}%` : '🔒'}
                           </span>
                         </div>
                       </div>
@@ -2652,18 +2797,28 @@ export default function PredictionsTab({
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
                         {t.winProbability || "Win Probability"}
                       </span>
-                      <span className="font-bold text-emerald-400 font-mono flex items-center gap-1 bg-emerald-950/40 border border-emerald-900/30 px-1.5 py-0.5 rounded text-[10px]">
-                        {pred.probability || pred.confidence}%
-                      </span>
+                      {isPredUnlocked ? (
+                        <span className="font-bold text-emerald-400 font-mono flex items-center gap-1 bg-emerald-950/40 border border-emerald-900/30 px-1.5 py-0.5 rounded text-[10px]">
+                          {pred.probability || pred.confidence}%
+                        </span>
+                      ) : (
+                        <span className="font-bold text-amber-400 font-mono flex items-center gap-1 bg-amber-950/40 border border-amber-900/30 px-1.5 py-0.5 rounded text-[10px]">
+                          <Lock className="w-2.5 h-2.5" /> VIP
+                        </span>
+                      )}
                     </div>
                     <div className="w-full h-2 bg-zinc-950 border border-zinc-900 rounded-full overflow-hidden p-[1px] relative">
-                      <div 
-                        className="h-full rounded-full bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-400 transition-all duration-500 relative"
-                        style={{ width: `${pred.probability || pred.confidence}%` }}
-                      >
-                        {/* Glow effect at the tip of the progress bar */}
-                        <span className="absolute right-0 top-0 bottom-0 w-2 bg-white/40 rounded-full blur-[1px] animate-pulse" />
-                      </div>
+                      {isPredUnlocked ? (
+                        <div 
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-400 transition-all duration-500 relative"
+                          style={{ width: `${pred.probability || pred.confidence}%` }}
+                        >
+                          {/* Glow effect at the tip of the progress bar */}
+                          <span className="absolute right-0 top-0 bottom-0 w-2 bg-white/40 rounded-full blur-[1px] animate-pulse" />
+                        </div>
+                      ) : (
+                        <div className="h-full rounded-full bg-zinc-800 w-1/3 opacity-40" />
+                      )}
                     </div>
 
                     {/* Momentum Sparkline Line Chart */}
@@ -2675,46 +2830,25 @@ export default function PredictionsTab({
                           {language === 'sw' ? 'Kasi' : 'Momentum'}
                         </span>
                       </div>
-                      <div className="h-10 w-full bg-zinc-950/40 border border-zinc-900 rounded-xl p-2 flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="text-[10px] font-mono text-zinc-500">
-                            {getHistoricalProbabilityData(pred.id, pred.probability || pred.confidence)[0].probability}%
-                          </span>
-                          <span className="text-[10px] text-zinc-600 font-mono">→</span>
-                          <span className="text-[10px] font-mono font-extrabold text-emerald-400">
-                            {pred.probability || pred.confidence}%
-                          </span>
+                      {isPredUnlocked ? (
+                        <div className="h-10 w-full bg-zinc-950/40 border border-zinc-900 rounded-xl p-2 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-[10px] font-mono text-zinc-500">
+                              {getHistoricalProbabilityData(pred.id, pred.probability || pred.confidence)[0].probability}%
+                            </span>
+                            <span className="text-[10px] text-zinc-600 font-mono">→</span>
+                            <span className="text-[10px] font-mono font-extrabold text-emerald-400">
+                              {pred.probability || pred.confidence}%
+                            </span>
+                          </div>
+                          <ProbabilitySparkline predId={pred.id} currentProbability={pred.probability || pred.confidence} />
                         </div>
-                        <div className="h-full flex-grow max-w-[140px]">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={getHistoricalProbabilityData(pred.id, pred.probability || pred.confidence)}>
-                              <XAxis dataKey="match" hide />
-                              <YAxis domain={['dataMin - 5', 'dataMax + 5']} hide />
-                              <Tooltip
-                                cursor={false}
-                                content={({ active, payload }) => {
-                                  if (active && payload && payload.length) {
-                                    return (
-                                      <div className="bg-zinc-950 border border-zinc-850 text-[10px] px-2 py-1 rounded-lg font-mono text-white shadow-2xl">
-                                        Match {payload[0].payload.matchNum}: <span className="text-emerald-400 font-bold">{payload[0].value}%</span>
-                                      </div>
-                                    );
-                                  }
-                                  return null;
-                                }}
-                              />
-                              <Line 
-                                type="monotone" 
-                                dataKey="probability" 
-                                stroke="#10b981" 
-                                strokeWidth={2} 
-                                dot={{ r: 2.5, stroke: '#10b981', strokeWidth: 1, fill: '#09090b' }}
-                                activeDot={{ r: 3.5, stroke: '#10b981', strokeWidth: 1.5, fill: '#10b981' }}
-                              />
-                            </LineChart>
-                          </ResponsiveContainer>
+                      ) : (
+                        <div className="h-10 w-full bg-zinc-950/40 border border-zinc-900 rounded-xl p-2 flex items-center justify-center text-[10px] font-mono text-amber-400 gap-1.5">
+                          <Lock className="w-3.5 h-3.5 text-amber-400" />
+                          <span>{language === 'sw' ? 'Mwelekeo wa ushindi umefungwa' : 'Win momentum locked (VIP)'}</span>
                         </div>
-                      </div>
+                      )}
                     </div>
 
                     {/* Expert Insight Panel */}
@@ -2724,7 +2858,7 @@ export default function PredictionsTab({
                           <Sparkles className="w-3 h-3 text-emerald-400 shrink-0 animate-pulse" />
                           <span>{t.expertInsight || "Expert AI Insight"}</span>
                         </div>
-                        {isUnlocked ? (
+                        {isPredUnlocked ? (
                           <div className="bg-zinc-950/40 border border-zinc-850/60 p-2.5 rounded-xl space-y-1.5 text-[10.5px] leading-relaxed text-gray-300 font-sans">
                             <div>
                               <span className="text-emerald-400 font-bold mr-1">{language === 'sw' ? 'Fomu:' : 'Form:'}</span>
@@ -2754,7 +2888,7 @@ export default function PredictionsTab({
                         <div className="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
                           <span>📐 Statistical Model Drivers:</span>
                         </div>
-                        {isUnlocked ? (
+                        {isPredUnlocked ? (
                           <div className="space-y-0.5 pl-1 text-[10.5px] text-gray-300">
                             {pred.plainLanguageFactors.slice(0, 3).map((factor, fIdx) => (
                               <div key={fIdx} className="flex items-start gap-1.5 leading-snug">
@@ -2775,17 +2909,12 @@ export default function PredictionsTab({
                 </div>
 
                 <div className="border-t border-zinc-800/80 pt-3.5 flex justify-between items-center">
-                  {isUnlocked ? (
+                  {isPredUnlocked ? (
                     <div className="grid grid-cols-3 gap-4 text-left items-center">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <button
                           type="button"
                           onClick={(e) => {
-                            if (!isUnlocked) {
-                              e.stopPropagation();
-                              onNavigateToBilling();
-                              return;
-                            }
                             togglePredictionSelection(pred, e);
                           }}
                           className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all cursor-pointer shrink-0 border ${
@@ -2885,7 +3014,7 @@ export default function PredictionsTab({
 
                     <button
                       onClick={(e) => {
-                        if (!isUnlocked) {
+                        if (!isPredUnlocked) {
                           e.stopPropagation();
                           onNavigateToBilling();
                           return;
@@ -2893,15 +3022,15 @@ export default function PredictionsTab({
                         togglePredictionSelection(pred, e);
                       }}
                       className={`text-[11px] font-sans font-semibold py-1.5 px-2.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                        !isUnlocked
+                        !isPredUnlocked
                           ? 'bg-zinc-950 hover:bg-zinc-900 border-zinc-800 text-amber-400'
                           : selectedPredictionIds.includes(pred.id)
                           ? 'bg-emerald-500 text-black border-emerald-400 font-bold shadow-md shadow-emerald-500/20'
                           : 'bg-zinc-950 hover:bg-zinc-800 border-zinc-800/80 text-gray-200 hover:border-emerald-500/50 hover:text-emerald-400'
                       }`}
-                      title={!isUnlocked ? "Unlock VIP Access" : (selectedPredictionIds.includes(pred.id) ? (language === 'sw' ? "Ondoa kwenye jamvi" : "Remove from custom betslip") : (language === 'sw' ? "Weka kwenye kibandiko cha dau (+)" : "Add to custom betslip builder (+)"))}
+                      title={!isPredUnlocked ? "Unlock VIP Access" : (selectedPredictionIds.includes(pred.id) ? (language === 'sw' ? "Ondoa kwenye jamvi" : "Remove from custom betslip") : (language === 'sw' ? "Weka kwenye kibandiko cha dau (+)" : "Add to custom betslip builder (+)"))}
                     >
-                      {!isUnlocked ? (
+                      {!isPredUnlocked ? (
                         <>
                           <Lock className="w-3 h-3 text-amber-400" />
                           <span>VIP Bet</span>
@@ -2925,7 +3054,8 @@ export default function PredictionsTab({
                   </div>
                 </div>
               </TiltCard>
-            ))
+            );
+          })
           )}
         </div>
       </div>
@@ -3146,76 +3276,93 @@ export default function PredictionsTab({
               exit={{ scale: 0.95, opacity: 0 }}
               className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl relative z-10"
             >
-              {/* Header */}
-              <div className="p-6 border-b border-zinc-800 flex justify-between items-start">
-                <div className="space-y-1">
-                  <span className="text-[10px] bg-zinc-950 border border-zinc-800 font-mono px-2 py-0.5 rounded text-emerald-400 font-bold uppercase tracking-wide">
-                    {selectedPrediction.match.sport} AI analysis
-                  </span>
-                  <h4 className="text-lg font-bold text-white font-sans mt-1.5">
-                    {selectedPrediction.match.homeTeam} vs {selectedPrediction.match.awayTeam}
-                  </h4>
-                  <p className="text-xs text-gray-500 font-mono uppercase tracking-wider">{selectedPrediction.match.league}</p>
-                </div>
-                <button 
-                  onClick={() => setSelectedPrediction(null)}
-                  className="text-gray-400 hover:text-white bg-zinc-950 hover:bg-zinc-800 p-1.5 rounded-lg text-sm transition-colors cursor-pointer border border-zinc-800"
-                >
-                  ✕
-                </button>
-              </div>
+              {(() => {
+                const isSelectedPredUnlocked = isPredictionUnlocked(selectedPrediction.id);
+                const isFreeSpotlight = !isUnlocked && freeDailyPredictionIds.has(selectedPrediction.id);
 
-              {/* Body */}
-              <div className="p-6 space-y-6 max-h-[450px] overflow-y-auto">
-                {!isUnlocked && (
-                  <div className="bg-gradient-to-br from-zinc-900 to-amber-950/30 border border-amber-500/30 p-5 rounded-2xl text-center space-y-3">
-                    <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
-                      <Lock className="w-5 h-5" />
+                return (
+                  <>
+                    {/* Header */}
+                    <div className="p-6 border-b border-zinc-800 flex justify-between items-start">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] bg-zinc-950 border border-zinc-800 font-mono px-2 py-0.5 rounded text-emerald-400 font-bold uppercase tracking-wide">
+                            {selectedPrediction.match.sport} AI analysis
+                          </span>
+                          {isFreeSpotlight ? (
+                            <span className="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                              🎁 Free Daily Pick (1 of 5)
+                            </span>
+                          ) : !isSelectedPredUnlocked ? (
+                            <span className="text-[9px] bg-amber-950 text-amber-300 border border-amber-500/40 font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <Lock className="w-2.5 h-2.5" /> VIP Exclusive
+                            </span>
+                          ) : null}
+                        </div>
+                        <h4 className="text-lg font-bold text-white font-sans mt-1.5">
+                          {selectedPrediction.match.homeTeam} vs {selectedPrediction.match.awayTeam}
+                        </h4>
+                        <p className="text-xs text-gray-500 font-mono uppercase tracking-wider">{selectedPrediction.match.league}</p>
+                      </div>
+                      <button 
+                        onClick={() => setSelectedPrediction(null)}
+                        className="text-gray-400 hover:text-white bg-zinc-950 hover:bg-zinc-800 p-1.5 rounded-lg text-sm transition-colors cursor-pointer border border-zinc-800"
+                      >
+                        ✕
+                      </button>
                     </div>
-                    <div className="space-y-1">
-                      <h5 className="text-sm font-bold text-white">
-                        {language === 'sw' ? 'Uchambuzi Kamili wa Kina Umefungwa' : 'Full In-Depth AI Breakdown Locked'}
-                      </h5>
-                      <p className="text-xs text-gray-400 max-w-md mx-auto leading-relaxed">
-                        {language === 'sw'
-                          ? 'Ili kuona uchaguzi rasmi, formula ya Poisson, orodha ya majeruhi, na mkakati wa Kelly Criterion, fungua akaunti yako ya VIP.'
-                          : 'To view the exact selection verdict, Poisson goal rates, injury reports, and Kelly Criterion staking bankroll recommendations, activate your VIP access.'
-                        }
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedPrediction(null);
-                        onNavigateToBilling();
-                      }}
-                      className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs py-2 px-5 rounded-xl cursor-pointer shadow-lg transition-transform active:scale-95 inline-flex items-center gap-1.5"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>{language === 'sw' ? 'Lipa Kufungua VIP' : 'Unlock VIP Access'}</span>
-                    </button>
-                  </div>
-                )}
-                
-                {/* Gauge Row */}
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-zinc-950 border border-zinc-800/60 p-3 rounded-xl text-center space-y-0.5">
-                    <span className="text-[10px] text-gray-500 block">AI Probability</span>
-                    <span className="text-base font-mono font-bold text-emerald-400">{selectedPrediction.probability}%</span>
-                  </div>
-                  <div className="bg-zinc-950 border border-zinc-800/60 p-3 rounded-xl text-center space-y-0.5">
-                    <span className="text-[10px] text-gray-500 block">Risk Matrix</span>
-                    <span className={`text-base font-sans font-bold ${
-                      selectedPrediction.riskLevel === 'Low' ? 'text-emerald-400' : 'text-amber-500'
-                    }`}>
-                      {selectedPrediction.riskLevel}
-                    </span>
-                  </div>
-                  <div className="bg-zinc-950 border border-zinc-800/60 p-3 rounded-xl text-center space-y-0.5">
-                    <span className="text-[10px] text-gray-500 block">Expected Value (EV)</span>
-                    <span className="text-base font-mono font-bold text-blue-400">{isUnlocked ? `+${selectedPrediction.expectedValue}` : '🔒 VIP'}</span>
-                  </div>
-                </div>
+
+                    {/* Body */}
+                    <div className="p-6 space-y-6 max-h-[450px] overflow-y-auto">
+                      {!isSelectedPredUnlocked && (
+                        <div className="bg-gradient-to-br from-zinc-900 to-amber-950/30 border border-amber-500/30 p-5 rounded-2xl text-center space-y-3">
+                          <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
+                            <Lock className="w-5 h-5" />
+                          </div>
+                          <div className="space-y-1">
+                            <h5 className="text-sm font-bold text-white">
+                              {language === 'sw' ? 'Uchambuzi Kamili wa Kina Umefungwa' : 'Full In-Depth AI Breakdown Locked'}
+                            </h5>
+                            <p className="text-xs text-gray-400 max-w-md mx-auto leading-relaxed">
+                              {language === 'sw'
+                                ? 'Ili kuona uchaguzi rasmi, formula ya Poisson, orodha ya majeruhi, na mkakati wa Kelly Criterion, fungua akaunti yako ya VIP.'
+                                : 'You are currently viewing a VIP match outside your 5 free daily matches. Activate VIP to unlock analysis, exact picks, odds, and Kelly recommendations.'
+                              }
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedPrediction(null);
+                              onNavigateToBilling();
+                            }}
+                            className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs py-2 px-5 rounded-xl cursor-pointer shadow-lg transition-transform active:scale-95 inline-flex items-center gap-1.5"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>{language === 'sw' ? 'Lipa Kufungua VIP' : 'Unlock VIP Access'}</span>
+                          </button>
+                        </div>
+                      )}
+                      
+                      {/* Gauge Row */}
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-zinc-950 border border-zinc-800/60 p-3 rounded-xl text-center space-y-0.5">
+                          <span className="text-[10px] text-gray-500 block">AI Probability</span>
+                          <span className="text-base font-mono font-bold text-emerald-400">{isSelectedPredUnlocked ? `${selectedPrediction.probability}%` : '🔒 VIP'}</span>
+                        </div>
+                        <div className="bg-zinc-950 border border-zinc-800/60 p-3 rounded-xl text-center space-y-0.5">
+                          <span className="text-[10px] text-gray-500 block">Risk Matrix</span>
+                          <span className={`text-base font-sans font-bold ${
+                            selectedPrediction.riskLevel === 'Low' ? 'text-emerald-400' : 'text-amber-500'
+                          }`}>
+                            {selectedPrediction.riskLevel}
+                          </span>
+                        </div>
+                        <div className="bg-zinc-950 border border-zinc-800/60 p-3 rounded-xl text-center space-y-0.5">
+                          <span className="text-[10px] text-gray-500 block">Expected Value (EV)</span>
+                          <span className="text-base font-mono font-bold text-blue-400">{isSelectedPredUnlocked ? `+${selectedPrediction.expectedValue}` : '🔒 VIP'}</span>
+                        </div>
+                      </div>
 
                 {/* Data Source & Mathematical Foundation Badge */}
                 <div className="bg-zinc-950 border border-zinc-800 p-4 rounded-xl space-y-2.5">
@@ -3245,7 +3392,7 @@ export default function PredictionsTab({
                     <div className="p-2.5 bg-zinc-900/60 rounded-lg border border-zinc-850 text-xs text-gray-300 space-y-1">
                       <div className="flex justify-between items-center font-mono">
                         <span className="text-gray-400">Model Fair Odds (True Probability):</span>
-                        {isUnlocked ? (
+                        {isSelectedPredUnlocked ? (
                           <span className="text-emerald-400 font-bold">@{selectedPrediction.modelFairOdds.toFixed(2)} ({selectedPrediction.impliedProbability || selectedPrediction.probability}%)</span>
                         ) : (
                           <span className="text-amber-400 font-bold">🔒 Locked (VIP)</span>
@@ -3261,15 +3408,15 @@ export default function PredictionsTab({
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                       <div className="bg-zinc-900/40 p-2 rounded-lg border border-zinc-850 text-center">
                         <span className="text-[9px] text-gray-400 block font-mono">Home Goal Rate (λ)</span>
-                        <span className="text-xs font-mono font-bold text-white">{isUnlocked ? selectedPrediction.statisticalMetrics.lambdaHome.toFixed(2) : '🔒'}</span>
+                        <span className="text-xs font-mono font-bold text-white">{isSelectedPredUnlocked ? selectedPrediction.statisticalMetrics.lambdaHome.toFixed(2) : '🔒'}</span>
                       </div>
                       <div className="bg-zinc-900/40 p-2 rounded-lg border border-zinc-850 text-center">
                         <span className="text-[9px] text-gray-400 block font-mono">Away Goal Rate (λ)</span>
-                        <span className="text-xs font-mono font-bold text-white">{isUnlocked ? selectedPrediction.statisticalMetrics.lambdaAway.toFixed(2) : '🔒'}</span>
+                        <span className="text-xs font-mono font-bold text-white">{isSelectedPredUnlocked ? selectedPrediction.statisticalMetrics.lambdaAway.toFixed(2) : '🔒'}</span>
                       </div>
                       <div className="bg-zinc-900/40 p-2 rounded-lg border border-zinc-850 text-center">
                         <span className="text-[9px] text-gray-400 block font-mono">Bayes Shrinkage</span>
-                        <span className="text-xs font-mono font-bold text-emerald-400">{isUnlocked ? `${(selectedPrediction.statisticalMetrics.shrinkageFactor * 100).toFixed(0)}%` : '🔒'}</span>
+                        <span className="text-xs font-mono font-bold text-emerald-400">{isSelectedPredUnlocked ? `${(selectedPrediction.statisticalMetrics.shrinkageFactor * 100).toFixed(0)}%` : '🔒'}</span>
                       </div>
                       <div className="bg-zinc-900/40 p-2 rounded-lg border border-zinc-850 text-center">
                         <span className="text-[9px] text-gray-400 block font-mono">Sample Size</span>
@@ -3283,7 +3430,7 @@ export default function PredictionsTab({
                       <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-gray-400 block">
                         Model Drivers:
                       </span>
-                      {isUnlocked ? (
+                      {isSelectedPredUnlocked ? (
                         <ul className="space-y-1 text-[11px] text-gray-300">
                           {selectedPrediction.plainLanguageFactors.map((fact, idx) => (
                             <li key={idx} className="flex items-start gap-2">
@@ -3305,7 +3452,7 @@ export default function PredictionsTab({
                     <Info className="w-3.5 h-3.5 text-emerald-400" />
                     AI Analyst Primary Recommendation
                   </h5>
-                  {isUnlocked ? (
+                  {isSelectedPredUnlocked ? (
                     <p className="text-xs text-gray-300 leading-relaxed">
                       {selectedPrediction.aiExplanation}
                     </p>
@@ -3338,7 +3485,7 @@ export default function PredictionsTab({
                       </span>
                     </div>
 
-                    {isUnlocked ? (
+                    {isSelectedPredUnlocked ? (
                       <div className="space-y-2.5">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {Object.entries(selectedPrediction.ensembleBreakdown.models).map(([key, modelData]) => {
@@ -3387,7 +3534,7 @@ export default function PredictionsTab({
                 )}
 
                 {/* 10+ Multi-Variables Breakdown Checklist */}
-                {isUnlocked ? (
+                {isSelectedPredUnlocked ? (
                   <div className="space-y-4">
                     <h5 className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-400 border-b border-zinc-800 pb-2">
                       Multi-Variable Match Analysis Reports
@@ -3588,7 +3735,7 @@ export default function PredictionsTab({
                             {t.recommendedStake || "Recommended Stake"}
                           </span>
                           <div className="flex items-baseline gap-1.5">
-                            {isUnlocked ? (
+                            {isSelectedPredUnlocked ? (
                               <>
                                 <span className="text-sm text-gray-500 font-mono font-semibold">
                                   {recommendedPercentage > 0 ? `${selectedCurrency}` : ''}
@@ -3611,7 +3758,7 @@ export default function PredictionsTab({
                           <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider">
                             Pct Sizing
                           </span>
-                          {isUnlocked ? (
+                          {isSelectedPredUnlocked ? (
                             <div className={`text-base font-mono font-black ${recommendedPercentage > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                               {recommendedPercentage > 0 ? `+${recommendedPercentage.toFixed(1)}%` : '0.0%'}
                             </div>
@@ -3626,7 +3773,7 @@ export default function PredictionsTab({
                       <div className="text-[10px] font-mono text-zinc-500 text-center flex items-center justify-center gap-1.5">
                         <Info className="w-3 h-3 text-emerald-500/40" />
                         <span>
-                          {isUnlocked ? (
+                          {isSelectedPredUnlocked ? (
                             recommendedPercentage > 0 
                               ? (language === 'sw' ? 'Dau hili limebuniwa kitaalamu ili kupunguza hatari.' : 'This sizing is mathematically optimized for long-term bankroll growth.')
                               : (language === 'sw' ? 'Hakuna Edge ya kutosha kuweka dau hili kulingana na fomula ya Kelly.' : 'No active betting edge predicted for this selection according to Kelly Sizing.')
@@ -3761,7 +3908,7 @@ export default function PredictionsTab({
 
               {/* Footer */}
               <div className="p-5 border-t border-zinc-800 bg-zinc-950/70 rounded-b-2xl flex flex-wrap justify-between items-center gap-3 text-xs">
-                {isUnlocked ? (
+                {isSelectedPredUnlocked ? (
                   <>
                     <div className="flex items-center gap-2">
                       <button
@@ -3817,7 +3964,10 @@ export default function PredictionsTab({
                   </>
                 )}
               </div>
-            </motion.div>
+            </>
+          );
+        })()}
+      </motion.div>
           </div>
         )}
       </AnimatePresence>

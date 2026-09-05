@@ -518,32 +518,157 @@ export async function submitAccountlessPayment(data: {
 }
 
 /**
- * Check payment status by Reference or ID
+ * Universal lookup for an accountless or registered payment submission
+ * Matches by ID, Reference, uppercase, lowercase, in-memory Map, and Firestore collections.
  */
-export async function getPaymentStatus(referenceOrId: string): Promise<AccountlessPaymentSubmission | null> {
-  const clean = referenceOrId.toUpperCase().trim();
-  if (paymentsStore.has(clean)) {
-    return paymentsStore.get(clean)!;
+export async function lookupPaymentSubmission(paymentIdOrRef: string): Promise<AccountlessPaymentSubmission | null> {
+  if (!paymentIdOrRef) return null;
+  const raw = paymentIdOrRef.trim();
+  if (!raw) return null;
+  const upper = raw.toUpperCase();
+  const lower = raw.toLowerCase();
+
+  // 1. Check in-memory paymentsStore directly
+  if (paymentsStore.has(raw)) return paymentsStore.get(raw)!;
+  if (paymentsStore.has(upper)) return paymentsStore.get(upper)!;
+  if (paymentsStore.has(lower)) return paymentsStore.get(lower)!;
+
+  // 2. Iterate in-memory paymentsStore values to find matching ID or Reference
+  for (const p of paymentsStore.values()) {
+    if (
+      p.id === raw ||
+      p.id.toLowerCase() === lower ||
+      p.id.toUpperCase() === upper ||
+      (p.reference && (
+        p.reference === raw ||
+        p.reference.toUpperCase() === upper ||
+        p.reference.toLowerCase() === lower
+      ))
+    ) {
+      return p;
+    }
   }
 
+  // 3. Query Firestore 'accountless_payments'
   if (firestoreDb && !firestoreDisabled) {
     try {
-      const snap = await firestoreDb.collection('accountless_payments')
-        .where('reference', '==', clean)
+      // By doc ID directly (raw, lowercase, uppercase)
+      const docSnap = await firestoreDb.collection('accountless_payments').doc(raw).get();
+      if (docSnap.exists) {
+        const pay = docSnap.data() as AccountlessPaymentSubmission;
+        paymentsStore.set(pay.id, pay);
+        if (pay.reference) paymentsStore.set(pay.reference.toUpperCase().trim(), pay);
+        return pay;
+      }
+
+      if (lower !== raw) {
+        const lowerDoc = await firestoreDb.collection('accountless_payments').doc(lower).get();
+        if (lowerDoc.exists) {
+          const pay = lowerDoc.data() as AccountlessPaymentSubmission;
+          paymentsStore.set(pay.id, pay);
+          if (pay.reference) paymentsStore.set(pay.reference.toUpperCase().trim(), pay);
+          return pay;
+        }
+      }
+
+      // By reference field
+      const refSnap = await firestoreDb.collection('accountless_payments')
+        .where('reference', '==', upper)
         .limit(1)
         .get();
-      if (!snap.empty) {
-        const data = snap.docs[0].data() as AccountlessPaymentSubmission;
-        paymentsStore.set(data.id, data);
-        paymentsStore.set(clean, data);
-        return data;
+      if (!refSnap.empty) {
+        const pay = refSnap.docs[0].data() as AccountlessPaymentSubmission;
+        paymentsStore.set(pay.id, pay);
+        if (pay.reference) paymentsStore.set(pay.reference.toUpperCase().trim(), pay);
+        return pay;
+      }
+
+      const rawRefSnap = await firestoreDb.collection('accountless_payments')
+        .where('reference', '==', raw)
+        .limit(1)
+        .get();
+      if (!rawRefSnap.empty) {
+        const pay = rawRefSnap.docs[0].data() as AccountlessPaymentSubmission;
+        paymentsStore.set(pay.id, pay);
+        if (pay.reference) paymentsStore.set(pay.reference.toUpperCase().trim(), pay);
+        return pay;
+      }
+
+      const idSnap = await firestoreDb.collection('accountless_payments')
+        .where('id', '==', raw)
+        .limit(1)
+        .get();
+      if (!idSnap.empty) {
+        const pay = idSnap.docs[0].data() as AccountlessPaymentSubmission;
+        paymentsStore.set(pay.id, pay);
+        if (pay.reference) paymentsStore.set(pay.reference.toUpperCase().trim(), pay);
+        return pay;
+      }
+
+      // 4. Also check the 'payments' collection (from registered users or checkout simulation)
+      const regDocSnap = await firestoreDb.collection('payments').doc(raw).get();
+      if (regDocSnap.exists) {
+        const data = regDocSnap.data() as any;
+        const plan = plansStore.get(data.planId) || DEFAULT_PLANS[0];
+        const adapted: AccountlessPaymentSubmission = {
+          id: data.id || raw,
+          planId: plan.id,
+          planName: data.planName || plan.name,
+          durationDays: plan.durationDays,
+          amount: Number(data.amount) || plan.priceKES,
+          currency: data.currency || 'KES',
+          method: data.paymentMethod || 'M-Pesa Till',
+          reference: data.transactionReference || data.reference || raw,
+          phone: data.phone || '',
+          email: data.email || '',
+          status: (data.status === 'approved' || data.paymentStatus === 'approved') ? 'APPROVED' : 'PENDING',
+          timestamp: data.timestamp || new Date().toISOString(),
+          keyCode: data.keyCode
+        };
+        paymentsStore.set(adapted.id, adapted);
+        paymentsStore.set(adapted.reference.toUpperCase().trim(), adapted);
+        return adapted;
+      }
+
+      const regRefSnap = await firestoreDb.collection('payments')
+        .where('transactionReference', '==', upper)
+        .limit(1)
+        .get();
+      if (!regRefSnap.empty) {
+        const data = regRefSnap.docs[0].data() as any;
+        const plan = plansStore.get(data.planId) || DEFAULT_PLANS[0];
+        const adapted: AccountlessPaymentSubmission = {
+          id: data.id || raw,
+          planId: plan.id,
+          planName: data.planName || plan.name,
+          durationDays: plan.durationDays,
+          amount: Number(data.amount) || plan.priceKES,
+          currency: data.currency || 'KES',
+          method: data.paymentMethod || 'M-Pesa Till',
+          reference: data.transactionReference || data.reference || upper,
+          phone: data.phone || '',
+          email: data.email || '',
+          status: (data.status === 'approved' || data.paymentStatus === 'approved') ? 'APPROVED' : 'PENDING',
+          timestamp: data.timestamp || new Date().toISOString(),
+          keyCode: data.keyCode
+        };
+        paymentsStore.set(adapted.id, adapted);
+        paymentsStore.set(adapted.reference.toUpperCase().trim(), adapted);
+        return adapted;
       }
     } catch (err) {
-      handleFirestoreError('getPaymentStatus', err);
+      handleFirestoreError('lookupPaymentSubmission', err);
     }
   }
 
   return null;
+}
+
+/**
+ * Check payment status by Reference or ID
+ */
+export async function getPaymentStatus(referenceOrId: string): Promise<AccountlessPaymentSubmission | null> {
+  return lookupPaymentSubmission(referenceOrId);
 }
 
 /**
@@ -554,22 +679,33 @@ export async function approvePayment(paymentIdOrRef: string, adminActor = 'Admin
   accessKey: AccessKey;
   whatsAppShareText: string;
 }> {
-  const clean = paymentIdOrRef.toUpperCase().trim();
-  let payment = paymentsStore.get(clean) || null;
-
-  if (!payment && firestoreDb && !firestoreDisabled) {
-    try {
-      const snap = await firestoreDb.collection('accountless_payments').doc(paymentIdOrRef).get();
-      if (snap.exists) {
-        payment = snap.data() as AccountlessPaymentSubmission;
-      }
-    } catch (err) {
-      handleFirestoreError('approvePayment fetch', err);
-    }
-  }
+  let payment = await lookupPaymentSubmission(paymentIdOrRef);
 
   if (!payment) {
-    throw new Error('Payment reference not found');
+    const cleanRef = (paymentIdOrRef || '').trim();
+    // If the administrator is approving a direct transaction reference or receipt
+    // that was paid via Till 6881472 without submitting an upfront web form
+    if (cleanRef.length >= 3) {
+      const defaultPlan = DEFAULT_PLANS[0]; // Standard 1-Day Pass or plan
+      payment = {
+        id: `pay_acc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        planId: defaultPlan.id,
+        planName: defaultPlan.name,
+        durationDays: defaultPlan.durationDays,
+        amount: defaultPlan.priceKES,
+        currency: 'KES',
+        method: 'M-Pesa Buy Goods Till 6881472',
+        reference: cleanRef.toUpperCase(),
+        phone: '',
+        email: '',
+        status: 'PENDING',
+        timestamp: new Date().toISOString()
+      };
+      paymentsStore.set(payment.id, payment);
+      paymentsStore.set(payment.reference.toUpperCase(), payment);
+    } else {
+      throw new Error('Payment reference not found');
+    }
   }
 
   // Create key
@@ -595,7 +731,15 @@ export async function approvePayment(paymentIdOrRef: string, adminActor = 'Admin
 
   if (firestoreDb && !firestoreDisabled) {
     try {
-      await firestoreDb.collection('accountless_payments').doc(payment.id).set(payment);
+      await firestoreDb.collection('accountless_payments').doc(payment.id).set(payment, { merge: true });
+      // If it originated from payments collection, update that too
+      await firestoreDb.collection('payments').doc(payment.id).set({
+        status: 'approved',
+        paymentStatus: 'approved',
+        keyCode: accessKey.keyCode,
+        approvedAt: payment.approvedAt,
+        approvedBy: adminActor
+      }, { merge: true });
     } catch (err) {
       handleFirestoreError('approvePayment write', err);
     }
@@ -625,8 +769,7 @@ export async function approvePayment(paymentIdOrRef: string, adminActor = 'Admin
  * Reject payment
  */
 export async function rejectPayment(paymentIdOrRef: string, reason: string, adminActor = 'Admin'): Promise<AccountlessPaymentSubmission> {
-  const clean = paymentIdOrRef.toUpperCase().trim();
-  let payment = paymentsStore.get(clean) || null;
+  const payment = await lookupPaymentSubmission(paymentIdOrRef);
 
   if (!payment) {
     throw new Error('Payment not found');
@@ -639,7 +782,12 @@ export async function rejectPayment(paymentIdOrRef: string, reason: string, admi
 
   if (firestoreDb && !firestoreDisabled) {
     try {
-      await firestoreDb.collection('accountless_payments').doc(payment.id).set(payment);
+      await firestoreDb.collection('accountless_payments').doc(payment.id).set(payment, { merge: true });
+      await firestoreDb.collection('payments').doc(payment.id).set({
+        status: 'rejected',
+        paymentStatus: 'rejected',
+        rejectionReason: reason
+      }, { merge: true });
     } catch (err) {
       handleFirestoreError('rejectPayment write', err);
     }

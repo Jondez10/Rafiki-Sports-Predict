@@ -274,6 +274,47 @@ export function getActiveSessionToken(): string | null {
   return localStorage.getItem(STORAGE_SESSION_TOKEN);
 }
 
+let globalTimersStarted = false;
+let globalTickerTimer: any = null;
+let globalPollerTimer: any = null;
+
+function startGlobalTimersIfNeeded() {
+  if (globalTimersStarted || typeof window === 'undefined') return;
+  globalTimersStarted = true;
+
+  // 1-second interval to update ticking countdown
+  globalTickerTimer = setInterval(() => {
+    if (currentGlobalState.expiresAt && currentGlobalState.isActive) {
+      const remaining = Math.max(0, Math.floor((new Date(currentGlobalState.expiresAt).getTime() - Date.now()) / 1000));
+      if (remaining <= 0) {
+        updateGlobalState({
+          isActive: false,
+          isExpired: true,
+          isExpiringSoon: false,
+          status: 'EXPIRED',
+          remainingSeconds: 0,
+          remainingFormatted: 'Expired'
+        });
+      } else {
+        const formatted = formatRemainingTime(remaining);
+        const expiringSoon = remaining <= 6 * 3600;
+        if (remaining !== currentGlobalState.remainingSeconds || formatted !== currentGlobalState.remainingFormatted) {
+          updateGlobalState({
+            remainingSeconds: remaining,
+            remainingFormatted: formatted,
+            isExpiringSoon: expiringSoon
+          });
+        }
+      }
+    }
+  }, 1000);
+
+  // Periodic server re-validation every 5 minutes
+  globalPollerTimer = setInterval(() => {
+    verifyCurrentSession();
+  }, 5 * 60 * 1000);
+}
+
 /**
  * React Hook for reactive Access Key State in components
  */
@@ -282,41 +323,15 @@ export function useAccessKeySession() {
 
   useEffect(() => {
     subscribers.add(setState);
-    // Trigger verification on mount
-    verifyCurrentSession();
-
-    // 1-second interval to update ticking countdown
-    const ticker = setInterval(() => {
-      if (currentGlobalState.expiresAt && currentGlobalState.isActive) {
-        const remaining = Math.max(0, Math.floor((new Date(currentGlobalState.expiresAt).getTime() - Date.now()) / 1000));
-        if (remaining <= 0) {
-          updateGlobalState({
-            isActive: false,
-            isExpired: true,
-            isExpiringSoon: false,
-            status: 'EXPIRED',
-            remainingSeconds: 0,
-            remainingFormatted: 'Expired'
-          });
-        } else {
-          updateGlobalState({
-            remainingSeconds: remaining,
-            remainingFormatted: formatRemainingTime(remaining),
-            isExpiringSoon: remaining <= 6 * 3600
-          });
-        }
-      }
-    }, 1000);
-
-    // Periodic server re-validation every 5 minutes
-    const serverPoller = setInterval(() => {
+    startGlobalTimersIfNeeded();
+    
+    // Only verify on first hook mount if still in loading state
+    if (currentGlobalState.isLoading) {
       verifyCurrentSession();
-    }, 5 * 60 * 1000);
+    }
 
     return () => {
       subscribers.delete(setState);
-      clearInterval(ticker);
-      clearInterval(serverPoller);
     };
   }, []);
 

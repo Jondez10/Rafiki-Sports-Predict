@@ -108,7 +108,7 @@ export default function GmailTab({
       title: language === 'en' ? 'Submit M-Pesa / Payment Proof to Customer Support' : 'Wasilisha Ushahidi wa Malipo ya M-Pesa kwa Msaada',
       to: 'rafikibc1000@gmail.com',
       subject: 'Rafiki Predict Payment Verification Reference',
-      body: `Hello Rafiki Support Team,\n\nI have completed my VIP subscription payment. Here are my transaction details:\n\n- Payment Method: M-Pesa Till 6881472 / Send Money 0716483642\n- Transaction Code / Reference: [ENTER CODE HERE]\n- Amount Paid: [ENTER AMOUNT, e.g. KES 500 / KES 1,000]\n- Registered Email: ${userProfile?.email || ''}\n\nPlease confirm and activate my VIP package access.\n\nThank you,\n${userProfile?.username || 'Rafiki Member'}`
+      body: `Hello Rafiki Support Team,\n\nI have completed my VIP subscription payment. Here are my transaction details:\n\n- Payment Method: M-Pesa Till 6881472 (John Mushira) / Send Money 0716483642\n- Transaction Code / Reference: [ENTER CODE HERE]\n- Amount Paid: [ENTER AMOUNT, e.g. KES 500 / KES 1,000]\n- Registered Email: ${userProfile?.email || ''}\n\nPlease confirm and activate my VIP package access.\n\nThank you,\n${userProfile?.username || 'Rafiki Member'}`
     },
     {
       id: 'share_prediction',

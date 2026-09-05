@@ -27,25 +27,28 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
   const token = await getAuthToken();
   const sessionToken = getActiveSessionToken();
   const deviceFp = getDeviceFingerprint();
-  const adminSecret = localStorage.getItem('rafiki_admin_secret_key');
+  const adminSecret = 
+    localStorage.getItem('rafiki_admin_secret_key') || 
+    sessionStorage.getItem('rafiki_admin_secret_key') ||
+    null;
   
   const headers = new Headers(options.headers || {});
 
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
-  } else if (sessionToken) {
+  } else if (sessionToken && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${sessionToken}`);
   }
 
-  if (sessionToken) {
+  if (sessionToken && !headers.has('X-Session-Token')) {
     headers.set('X-Session-Token', sessionToken);
   }
 
-  if (deviceFp) {
+  if (deviceFp && !headers.has('X-Device-Fingerprint')) {
     headers.set('X-Device-Fingerprint', deviceFp);
   }
 
-  if (adminSecret) {
+  if (adminSecret && !headers.has('X-Admin-Secret')) {
     headers.set('X-Admin-Secret', adminSecret);
   }
 

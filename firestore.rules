@@ -92,6 +92,22 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /accountless_payments/{paymentId} {
+      allow read, write: if false;
+    }
+
+    match /access_keys/{keyId} {
+      allow read, write: if false;
+    }
+
+    match /subscription_plans/{planId} {
+      allow read, write: if false;
+    }
+
+    match /key_audit_logs/{logId} {
+      allow read, write: if false;
+    }
+
     match /admin_notifications/{notifId} {
       allow read, write: if false;
     }
